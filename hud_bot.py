@@ -6,7 +6,7 @@
 Same check-in as neurokind_bot.py (which stays unchanged as the fallback demo), plus:
   - hud.html shows the camera, the topic list, captions, a wrist-tilt dial and answer cards
   - showing something attaches ONE camera frame to Gemini: say "here's my lunch" / "look at this",
-    single-tap the band, or press P on the HUD. Frames live only in memory; nothing is saved.
+    or press P on the HUD (no band tap: a flick reads as a tap). Frames live only in memory; nothing is saved.
   - the dial: tilt the wrist to pick an answer, double-tap (or Enter on the HUD) to confirm
   - the card gets an optional `shown` line per topic (objects only, never people), safety-gated
 HUD keys: P show camera · ← → move the dial · Enter confirm · M mirror · C captions.
@@ -249,7 +249,8 @@ class HudBandInput(nk.VexoBandInput):
         b = self._band
         b.on("motion", self._on_motion)
         if self._gestures:                                # the pretend band taps by itself: ignore it in --sim
-            b.on("tap", lambda e: self._hop(self._s.show_now("band tap")))
+            # No single-tap action: the band reports a wrist flick's sharp stop as a "tap", so tap = camera
+            # fired on every flick in the first real run. Camera = voice ("here's my lunch") or the HUD's P key.
             b.on("double-tap", lambda e: self._hop(self._s.confirm_dial()))
         b.configure(motion=25, events=True)               # low rate: motion shares the Bluetooth link with audio
         prov.log("band->mac", "wrist motion 25/s (tilt only)", "this Mac (Bluetooth)")
