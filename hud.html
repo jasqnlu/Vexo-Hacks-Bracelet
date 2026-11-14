@@ -95,6 +95,73 @@
   .start button { font: inherit; font-size: 16px; padding: 14px 22px; border-radius: 12px; border: 1px solid var(--line);
     background: rgba(143,211,255,.16); color: var(--ink); cursor: pointer; }
   .start p { color: var(--dim); margin-top: 12px; font-size: 13px; text-align: center; }
+
+  /* Sprout: Tend's character (bottom-left, between the rail and the wrist meter) */
+  .sprout { position: fixed; left: 18px; bottom: 118px; width: 210px; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; pointer-events: none; --glow: rgba(155,231,176,.38); }
+  .sp-fig { position: relative; width: 126px; height: 134px; transform-origin: 50% 100%; }
+  .sp-fig svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 16px var(--glow)); transition: filter .6s; }
+  .sp-fig svg * { transform-box: fill-box; }
+  .sp-lean { transform-origin: 50% 100%; transition: transform .5s cubic-bezier(.3,.7,.3,1); }
+  .sp-leaf { transition: transform .45s cubic-bezier(.3,.7,.3,1); }
+  .sp-leaf.l { transform-origin: 100% 85%; } .sp-leaf.r { transform-origin: 0% 85%; }
+  .sp-eyes { transform-origin: 50% 50%; transition: transform .4s; }
+  .sp-eye { transform-origin: 50% 50%; animation: sp-blink 5.5s infinite; }
+  .sp-eye.r { animation-delay: .02s; }
+  .sp-smile, .sp-open, .sp-soft { transition: opacity .2s; }
+  .sp-open { opacity: 0; transform-origin: 50% 30%; }
+  .sp-soft { opacity: 0; }
+  .sp-ring { opacity: 0; transform-origin: 50% 50%; }
+  .sp-body-warm { opacity: 0; transition: opacity .6s; }
+  .sp-label { padding: 5px 14px; font-size: 14px; font-weight: 550; color: var(--dim); border-radius: 999px;
+    transition: color .3s, border-color .3s; white-space: nowrap; }
+  .sp-think { position: absolute; right: -30px; top: 6px; padding: 7px 9px; display: flex; gap: 5px;
+    border-radius: 999px; opacity: 0; transform: scale(.7); transition: opacity .3s, transform .3s; }
+  .sp-think::after { content: ""; position: absolute; left: 2px; bottom: -9px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--glass); border: 1px solid var(--line); }
+  .sp-think i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: .3;
+    animation: sp-dot 1.3s infinite ease-in-out; }
+  .sp-think i:nth-child(2) { animation-delay: .2s; } .sp-think i:nth-child(3) { animation-delay: .4s; }
+
+  .sprout.idle .sp-fig { animation: sp-breathe 4.2s ease-in-out infinite; }
+  .sprout.listening { --glow: rgba(155,231,176,.55); }
+  .sprout.listening .sp-lean { transform: rotate(6deg); }
+  .sprout.listening .sp-leaf.l { transform: rotate(16deg); }
+  .sprout.listening .sp-leaf.r { transform: rotate(-16deg); }
+  .sprout.listening .sp-ring { animation: sp-ring 2.2s ease-out infinite; }
+  .sprout.listening .sp-label { color: var(--good); border-color: rgba(155,231,176,.5); }
+  .sprout.thinking .sp-lean { animation: sp-sway 3.2s ease-in-out infinite; }
+  .sprout.thinking .sp-eyes { transform: translate(3px, -4px); }
+  .sprout.thinking .sp-think { opacity: 1; transform: none; }
+  .sprout.thinking .sp-label { color: var(--accent); border-color: rgba(143,211,255,.5); }
+  .sprout.speaking { --glow: rgba(143,211,255,.45); }
+  .sprout.speaking .sp-fig { animation: sp-bob .8s ease-in-out infinite; }
+  .sprout.speaking .sp-smile { opacity: 0; }
+  .sprout.speaking .sp-open { opacity: 1; animation: sp-talk .9s infinite; }
+  .sprout.speaking .sp-leaf.l { animation: sp-leafl .8s ease-in-out infinite; }
+  .sprout.speaking .sp-leaf.r { animation: sp-leafr .8s ease-in-out infinite; }
+  .sprout.speaking .sp-label { color: var(--accent); border-color: rgba(143,211,255,.5); }
+  .sprout.concern { --glow: rgba(255,200,120,.6); }
+  .sprout.concern .sp-body-warm { opacity: 1; }
+  .sprout.concern .sp-leaf.l { transform: rotate(-8deg); }
+  .sprout.concern .sp-leaf.r { transform: rotate(8deg); }
+  .sprout.concern .sp-eyes { transform: translateY(2px) scaleY(.78); }
+  .sprout.concern .sp-eye { animation-duration: 7s; }
+  .sprout.concern .sp-smile { opacity: 0; }
+  .sprout.concern .sp-soft { opacity: 1; }
+  .sprout.concern .sp-label { color: var(--mid); border-color: rgba(255,217,138,.55); }
+
+  @keyframes sp-breathe { 50% { transform: scale(1.035, 1.02); } }
+  @keyframes sp-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
+  @keyframes sp-ring { 0% { opacity: .7; transform: scale(.92); } 100% { opacity: 0; transform: scale(1.18); } }
+  @keyframes sp-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+  @keyframes sp-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+  @keyframes sp-talk { 0% { transform: scaleY(.35); } 22% { transform: scaleY(1); } 40% { transform: scaleY(.5); }
+    58% { transform: scaleY(.9); } 78% { transform: scaleY(.3); } 100% { transform: scaleY(.35); } }
+  @keyframes sp-leafl { 50% { transform: rotate(7deg); } }
+  @keyframes sp-leafr { 50% { transform: rotate(-7deg); } }
+  @keyframes sp-dot { 0%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  @media (max-height: 720px) { .sprout { transform: scale(.8); transform-origin: 0 100%; } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -123,6 +190,47 @@
 
 <div class="caps" id="caps"></div>
 
+<div class="sprout idle" id="sprout" aria-live="polite">
+  <div class="sp-fig">
+    <svg viewBox="0 0 140 150" aria-hidden="true">
+      <defs>
+        <radialGradient id="spBody" cx="38%" cy="32%" r="75%">
+          <stop offset="0" stop-color="#d9fbe4"/><stop offset=".45" stop-color="#8fe0ab"/><stop offset="1" stop-color="#3f9a6c"/>
+        </radialGradient>
+        <radialGradient id="spWarm" cx="38%" cy="32%" r="75%">
+          <stop offset="0" stop-color="#fff1d6"/><stop offset=".45" stop-color="#f3cf8e"/><stop offset="1" stop-color="#b98a46"/>
+        </radialGradient>
+        <linearGradient id="spLeaf" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#b9f2c6"/><stop offset="1" stop-color="#4fb27a"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="70" cy="145" rx="34" ry="4.5" fill="rgba(0,0,0,.35)"/>
+      <g class="sp-lean">
+        <circle class="sp-ring" cx="70" cy="98" r="50" fill="none" stroke="#9be7b0" stroke-width="2.5"/>
+        <path d="M70 56 C70 50 70 46 71 40" stroke="#4fb27a" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <g class="sp-leaf l"><path d="M71 41 C60 22 40 16 22 22 C30 40 50 48 71 41 Z" fill="url(#spLeaf)"/>
+          <path d="M68 40 C56 33 42 28 30 25" stroke="rgba(30,90,55,.45)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+        <g class="sp-leaf r"><path d="M71 41 C82 22 102 16 120 22 C112 40 92 48 71 41 Z" fill="url(#spLeaf)"/>
+          <path d="M74 40 C86 33 100 28 112 25" stroke="rgba(30,90,55,.45)" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>
+        <ellipse cx="70" cy="100" rx="46" ry="44" fill="url(#spBody)"/>
+        <ellipse class="sp-body-warm" cx="70" cy="100" rx="46" ry="44" fill="url(#spWarm)"/>
+        <ellipse cx="56" cy="74" rx="14" ry="7" fill="rgba(255,255,255,.35)"/>
+        <ellipse cx="46" cy="110" rx="7" ry="4.5" fill="rgba(255,140,150,.38)"/>
+        <ellipse cx="94" cy="110" rx="7" ry="4.5" fill="rgba(255,140,150,.38)"/>
+        <g class="sp-eyes">
+          <g class="sp-eye l"><ellipse cx="55" cy="98" rx="5.5" ry="7" fill="#17311f"/><circle cx="57" cy="95.5" r="1.8" fill="#fff"/></g>
+          <g class="sp-eye r"><ellipse cx="85" cy="98" rx="5.5" ry="7" fill="#17311f"/><circle cx="87" cy="95.5" r="1.8" fill="#fff"/></g>
+        </g>
+        <path class="sp-smile" d="M63 112 Q70 118 77 112" stroke="#17311f" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <ellipse class="sp-open" cx="70" cy="114" rx="6" ry="5" fill="#17311f"/>
+        <path class="sp-soft" d="M64 114 Q70 116.5 76 114" stroke="#3a2a12" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <div class="sp-think glass" aria-hidden="true"><i></i><i></i><i></i></div>
+  </div>
+  <div class="sp-label glass" id="spLabel">ready</div>
+</div>
+
 <div class="wrist glass">
   wrist <span id="wristTxt">no band</span>
   <div class="bar"><i id="rollDot"></i></div>
@@ -132,7 +240,7 @@
 <div class="start" id="start">
   <div style="text-align:center">
     <button id="go">Start camera HUD</button>
-    <p>Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions</p>
+    <p>Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
   </div>
 </div>
 
@@ -195,6 +303,7 @@ function handle(m) {
   else if (m.type === "dial") dial(m);
   else if (m.type === "flash") { const s = $("shutter"); s.classList.remove("go"); void s.offsetWidth; s.classList.add("go"); }
   else if (m.type === "select") moveSel(m.delta);
+  else if (m.type === "avatar") setAvatar(m.state);
   else if (m.type === "gesture") {
     const t = $("listenTxt"), p = $("listen");
     t.textContent = m.text; p.style.borderColor = "var(--accent)";
@@ -261,11 +370,27 @@ function dial(m) {
   }).join("");
 }
 
+// ------------------------------------------------------------ Sprout (character)
+const AVATAR = { idle: "ready", listening: "listening…", thinking: "thinking…", speaking: "speaking", concern: "here with you" };
+const AVATAR_CYCLE = ["idle", "listening", "thinking", "speaking", "concern"];
+let avatarState = "idle", avatarT = null;
+function setAvatar(s, force) {
+  if (!(s in AVATAR)) return;
+  if (avatarState === "concern" && !force) return;        // sticky until reload (S key can leave it in rehearsal)
+  clearTimeout(avatarT);
+  avatarState = s;
+  $("sprout").className = "sprout " + s;
+  $("spLabel").textContent = AVATAR[s];
+  if (s === "thinking") avatarT = setTimeout(() => setAvatar("idle"), 12000);   // e.g. a silent tool call
+}
+
 document.addEventListener("keydown", e => {
   if (e.key === "m" || e.key === "M") video.classList.toggle("mirror");
   if (e.key === "c" || e.key === "C") $("caps").style.display = $("caps").style.display === "none" ? "" : "none";
   if (e.key === "ArrowDown") moveSel(1);
   if (e.key === "ArrowUp") moveSel(-1);
+  if (e.key === "s" || e.key === "S")                       // rehearsal: cycle Sprout's states locally
+    setAvatar(AVATAR_CYCLE[(AVATAR_CYCLE.indexOf(avatarState) + 1) % AVATAR_CYCLE.length], true);
   // keyboard fallbacks for the band gestures (handy if the band acts up on stage)
   const send = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
   if (e.key === "p" || e.key === "P") send({ type: "show" });
