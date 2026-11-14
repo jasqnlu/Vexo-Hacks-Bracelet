@@ -30,7 +30,9 @@ from neurokind_bot import HERE, KIT, SAMPLE_RATE, logger, prov
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import (Frame, LLMFullResponseEndFrame, LLMRunFrame, LLMTextFrame,
+from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,  # noqa: E402
+                                   UserStartedSpeakingFrame, UserStoppedSpeakingFrame,
+                                   Frame, LLMFullResponseEndFrame, LLMRunFrame, LLMTextFrame,
                                    TranscriptionFrame)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -104,6 +106,7 @@ class Session:
         self.dial_armed = False                           # dwell counts only after the wrist has moved once
         self._dwell_task = None
         self._last_move_on = 0.0
+        self._avatar = None
         self.loop = None
         self.task = None
         self.context = None
@@ -115,6 +118,13 @@ class Session:
         self.last_attach = 0.0
         self.last_roll = 0.0
         self.roll_zero = None                             # set when a dial appears (see on_roll)
+
+    async def avatar(self, state: str, force: bool = False):
+        """Sprout's state on the HUD: idle | listening | thinking | speaking | concern (concern is final)."""
+        if (self._avatar == "concern" and not force) or state == self._avatar:
+            return
+        self._avatar = state
+        await self.hud.send({"type": "avatar", "state": state})   # sticky: a reloaded tab gets it back
 
     async def push_state(self, listening=True):
         await self.hud.send({"type": "state", "topic": self.topic, "listening": listening,
@@ -223,6 +233,7 @@ class Session:
         prov.log("wrist->llm", "double-tap: nothing to add", "Gemini (Google)")
         await self.hud.send({"type": "gesture", "text": "✓ nothing to add"}, sticky=False)
         self.context.add_message({"role": "user", "content": "(The wearer double-tapped to move on: nothing to add.)"})
+        await self.avatar("thinking")
         await self.task.queue_frames([LLMRunFrame()])
 
     async def confirm_dial(self, how: str = "double-tap"):
@@ -243,6 +254,7 @@ class Session:
         self.context.add_message({"role": "user", "content":
                                   f"(With a wrist tilt, the wearer chose to skip {topic}.)" if skipped else
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
+        await self.avatar("thinking")
         await self.task.queue_frames([LLMRunFrame()])
 
     # -------------------------------------------------------------- camera
@@ -274,6 +286,7 @@ class Session:
         """Tap / P key: attach a frame and let the bot respond to it right away."""
         if self.task and await self.attach_frame(reason):
             self.context.add_message({"role": "user", "content": "(The wearer is showing you this.)"})
+            await self.avatar("thinking")
             await self.task.queue_frames([LLMRunFrame()])
 
     async def on_hud_message(self, msg: dict):
@@ -404,6 +417,25 @@ class CameraAndCaptions(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+class AvatarState(FrameProcessor):
+    """Pipecat's turn frames -> Sprout's state on the HUD. Placed at the end of the pipeline so it sees the
+    wearer's turn (from the user aggregator) and the bot's audio start/stop (from the speaker output)."""
+
+    STATES = {UserStartedSpeakingFrame: "listening", UserStoppedSpeakingFrame: "thinking",
+              BotStartedSpeakingFrame: "speaking", BotStoppedSpeakingFrame: "idle"}
+
+    def __init__(self, session: Session):
+        super().__init__()
+        self._s = session
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        state = self.STATES.get(type(frame))
+        if state:
+            await self._s.avatar(state)
+        await self.push_frame(frame, direction)
+
+
 class BotCaptions(FrameProcessor):
     """After the LLM: collects each reply and sends it to the HUD as one caption."""
 
@@ -476,6 +508,7 @@ def make_submit(session: Session):
         await session.push_dial()
         await session.push_state()
         if escalate:
+            await session.avatar("concern", force=True)
             await session.hud.send({"type": "card", "id": "escalate", "title": "Flagged for care team",
                                     "body": "988 Suicide & Crisis Lifeline: call or text 988.", "kind": "alert"},
                                    sticky=False)
@@ -570,6 +603,7 @@ async def main():
     if not a.no_speaker:
         from pipecat.transports.local.audio import LocalAudioTransport, LocalAudioTransportParams
         procs.append(LocalAudioTransport(LocalAudioTransportParams(audio_out_enabled=True)).output())
+    procs.append(AvatarState(session))
     procs.append(aggs.assistant())
 
     task = PipelineTask(Pipeline(procs), params=PipelineParams(audio_in_sample_rate=SAMPLE_RATE, enable_metrics=True))
@@ -578,6 +612,7 @@ async def main():
     await session.push_state()
 
     context.add_message({"role": "user", "content": "(The wearer just started a check-in. Greet them briefly and ask how their day was.)"})
+    await session.avatar("thinking")
     await task.queue_frames([LLMRunFrame()])
 
     async def hard_stop():
