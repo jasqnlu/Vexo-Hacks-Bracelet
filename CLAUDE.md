@@ -72,7 +72,8 @@ Pipecat version: **1.16.0**. Its API changes often: check installed source befor
 | `card.html` | Clinician dashboard (pastel tiles per topic with 7-day mini bars, overview + topic chips, quotes + follow-up bar, 7-day timeline grid, data-flow stepper). Plain HTML/JS, no build step. |
 | `check_all.py` | Validates Deepgram + ElevenLabs keys and runs `bench_gemini.py`. Never prints keys. |
 | `bench_gemini.py` | Times first-token latency per Gemini model. |
-| `hud_bot.py` | **Camera HUD** version of the check-in ("talk, tilt, or show it something"). Imports `neurokind_bot` (unchanged). Adds wrist motion (roll → tilt dial, double-tap = confirm (no single-tap action: flicks read as taps), fast wrist FLICK > `--flick-dps` 350°/s = "I'm done talking": ends the turn at once, Smart Turn stays as fallback, stop_mode FIRST), attaches ONE camera frame to Gemini on "here's…/look at…" or P key; optional `shown` per topic, gated for diagnostic words + people. Flags as the bot plus `--port`, `--flip-dial`. Open http://localhost:8765. |
+| `hud_bot.py` | **Camera HUD** version of the check-in ("talk, tilt, or show it something"). Imports `neurokind_bot` (unchanged). Adds wrist motion (roll → tilt dial [skip, a, b, c]: far left past ~40° = skip → `not_discussed`; HOLD a tilt `--dwell` 1.2 s to confirm (bar fills; only after the wrist has moved, so resting never auto-picks), double-tap = confirm now (no single-tap action: flicks read as taps); hysteresis in at 18°, out at 10° (`EDGES`/`HYST`), fast wrist FLICK > `--flick-dps` 350°/s = "I'm done talking": ends the turn at once, Smart Turn stays as fallback, stop_mode FIRST), attaches ONE camera frame to Gemini on "here's…/look at…" or P key; optional `shown` per topic, gated for diagnostic words + people. Flags as the bot plus `--port`, `--flip-dial`, `--dwell`. Open http://localhost:8765. |
+| `pinch_probe.py` | 1-minute test: accel at 416/s + mic, still / pinch ×10 / other. **Result on band 1: NO.** Pinches visible (70–390 mg jerk) but inside normal movement (taps/claps 1,400+ mg), and fast motion caused 680 lost samples + 19 audio gaps. Don't retry for the demo. |
 | `hud_server.py` | aiohttp on 127.0.0.1: serves `hud.html`, receives JPEG frames over WebSocket (newest kept in memory only, never disk), pushes state/captions/cards/wrist/dial. Refuses foreign Origins. `python hud_server.py` = standalone camera test. |
 | `hud.html` | Full-screen camera HUD. Keys: P show camera · ← → dial · Enter confirm · M mirror · C captions. |
 | `env.example` | Template for `.env`. |
@@ -110,16 +111,17 @@ python3 -m http.server 8000 --bind 127.0.0.1          # then open http://localho
 python vexo-open-kit/examples/python/audio_to_text.py 1 --seconds 40 --text no --out demo_checkin.ogg   # record demo input
 ```
 
-## Status (as of ~1:10 PM)
+## Status (as of ~1:10 PM; updates below)
 Done and tested:
 - Band connects (#1); mic capture works; Silero speech detection works in the noisy room (old loudness-based detector failed there); local Whisper transcribes correctly.
 - Pipecat pipeline runs end to end on the sim band (Deepgram transcribing, Gemini replying ~1.3 s TTFB).
 - Deepgram key OK. Gemini key OK. Safety gate blocks "shows signs of insomnia" and Gemini gets the fix list. Dashboard renders with synthetic history.
 Update ~2:35 PM: GEMINI_MODEL in .env was EMPTY (bot fell back to slow Argon) → set to gemini-4-hydrogen (bench 1.6–2.2 s vs Argon 2.1–2.5 s; thinking "minimal" is not supported, "low" is the floor). hud_bot caps Smart Turn wait at 1.5 s (`--turn-silence`, Pipecat default 3 s).
 Update ~2:10 PM: ElevenLabs fixed (voice was still a library voice → now default "Sarah" `EXAVITQu4vr4xnSDxMaL`, v4 Turbo works, TTFB ~0.18 s; the API key cannot list voices). Camera HUD (`hud_bot.py`) runs end to end on `--sim`: Gemini described a test image ("a plate with a sandwich and a red piece of fruit").
+Update ~3:15 PM: product renamed **Tend** (display text only; files keep `neurokind_`). Dial got hold-to-confirm, hysteresis and skip. Pinch-to-confirm tested and dropped (see `pinch_probe.py`).
 Open / next:
 1. ~~ElevenLabs voice~~ done.
-2. **First full real-band check-in** producing a card (`neurokind_bot.py 1`). This is the milestone.
+2. ~~First full real-band check-in~~ **done ~3:11 PM** (`hud_bot.py 1`): hold, double-tap, skip all worked; card saved with stress `not_discussed`.
 3. Record `demo_checkin.ogg` (synthetic script incl. a name + phone number so redaction shows).
 4. Sync card schema with Alyshah.
 5. Rehearse demo; record backup video before 5 PM.
