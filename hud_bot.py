@@ -184,13 +184,65 @@ class Session:
             await self.confirm_dial()
 
 
+# ------------------------------------------------------------------ wrist flick = "I'm done talking"
+from pipecat.frames.frames import VADUserStartedSpeakingFrame  # noqa: E402
+from pipecat.turns.user_stop import BaseUserTurnStopStrategy  # noqa: E402
+
+
+class FlickUserTurnStopStrategy(BaseUserTurnStopStrategy):
+    """Ends the wearer's turn the moment they flick their wrist, instead of waiting for silence.
+
+    Used first in a FIRST-wins list, so Smart Turn still ends turns when nobody flicks. If the flick
+    lands before Deepgram's last words arrive, the turn ends as soon as that text comes in (within
+    PENDING_SECS), so Gemini never gets an empty turn.
+    """
+    PENDING_SECS = 3.0
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._text = ""
+        self._open = False
+        self._pending_at = 0.0
+
+    async def handle_user_turn_started(self):
+        self._text, self._open, self._pending_at = "", True, 0.0
+
+    async def handle_user_turn_stopped(self):
+        self._text, self._open, self._pending_at = "", False, 0.0
+
+    async def process_frame(self, frame: Frame):
+        if isinstance(frame, TranscriptionFrame) and frame.text.strip():
+            self._text += frame.text
+            if self._pending_at and time.time() - self._pending_at < self.PENDING_SECS:
+                await self._end("flick (text arrived)")
+        elif isinstance(frame, VADUserStartedSpeakingFrame):
+            self._pending_at = 0.0                        # they kept talking after the flick: let it go
+
+    async def flick(self) -> bool:
+        """Called on the event loop when the band sees a flick. Returns True if it ended a turn."""
+        if not self._open:
+            return False
+        if self._text:
+            await self._end("flick")
+            return True
+        self._pending_at = time.time()                    # words still on their way from Deepgram
+        return True
+
+    async def _end(self, why: str):
+        self._pending_at = 0.0
+        logger.info(f"Turn ended by wrist {why}")
+        await self.report_user_turn_stopped()
+
+
 # ------------------------------------------------------------------ band: mic (inherited) + motion + gestures
 class HudBandInput(nk.VexoBandInput):
-    def __init__(self, session: Session, *args, gestures=True, **kwargs):
+    def __init__(self, session: Session, *args, gestures=True, flick_dps=350.0, **kwargs):
         super().__init__(*args, **kwargs)
         self._s, self._gestures = session, gestures
         self._roll = self._pitch = 0.0
         self._sent = 0.0
+        self._flick_dps, self._last_flick = flick_dps, 0.0
+        self.flick_strategy = None                        # set by main(); see FlickUserTurnStopStrategy
 
     def _connect(self):
         super()._connect()                                # mic on, exactly as in the check-in bot
@@ -206,7 +258,18 @@ class HudBandInput(nk.VexoBandInput):
         if self._s.loop:
             asyncio.run_coroutine_threadsafe(coro, self._s.loop)
 
+    async def _on_flick(self, spin: float):
+        if await self.flick_strategy.flick():
+            logger.info(f"Wrist flick ({spin:.0f}°/s): ending your turn")
+            await self._s.hud.send({"type": "gesture", "text": "↯ done: answering"}, sticky=False)
+
     def _on_motion(self, m):
+        if self._gestures and self.flick_strategy and m.gx is not None:
+            spin = math.sqrt(m.gx * m.gx + m.gy * m.gy + m.gz * m.gz)   # degrees/second, any direction
+            now = time.time()
+            if spin > self._flick_dps and now - self._last_flick > 1.0:
+                self._last_flick = now
+                self._hop(self._on_flick(spin))
         if m.ax is None:
             return
         roll = math.degrees(math.atan2(m.ay, m.az))      # gravity only: tilt is reliable, turning is not (no compass)
@@ -329,6 +392,8 @@ async def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--turn-silence", type=float, default=1.5,
                     help="max seconds of silence before the bot answers (Pipecat default 3)")
+    ap.add_argument("--flick-dps", type=float, default=350,
+                    help="wrist turning speed (degrees/second) that counts as an 'I'm done' flick")
     a = ap.parse_args()
     if not a.sim and a.number is None:
         ap.error("give your band number, or --sim")
@@ -339,7 +404,7 @@ async def main():
     session.loop = asyncio.get_running_loop()
     hud.on_message = session.on_hud_message
 
-    band_in = HudBandInput(session, a.number, sim=a.sim, replay=a.replay, gestures=not a.sim)
+    band_in = HudBandInput(session, a.number, sim=a.sim, replay=a.replay, gestures=not a.sim, flick_dps=a.flick_dps)
 
     if a.stt == "deepgram":
         from pipecat.services.deepgram.stt import DeepgramSTTService
@@ -382,11 +447,15 @@ async def main():
     from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
     from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
     from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
-    from pipecat.turns.user_turn_strategies import UserTurnStrategies
-    turns = UserTurnStrategies(stop=[TurnAnalyzerUserTurnStopStrategy(
+    from pipecat.turns.user_turn_strategies import StrategyMode, UserTurnStrategies, UserTurnStrategiesParams
+    flick = FlickUserTurnStopStrategy()
+    band_in.flick_strategy = flick
+    turns = UserTurnStrategies(stop=[flick, TurnAnalyzerUserTurnStopStrategy(
         turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
     aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
-        vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns))
+        vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns,
+        # Pipecat's default needs EVERY stop strategy to agree; we want whichever decides first (flick or silence).
+        user_turn_strategies_params=UserTurnStrategiesParams(stop_mode=StrategyMode.FIRST)))
 
     procs = [band_in, stt, nk.Redactor(stt_dest), CameraAndCaptions(session), aggs.user(), llm,
              BotCaptions(session), tts]

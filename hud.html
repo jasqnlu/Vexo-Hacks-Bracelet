@@ -185,6 +185,12 @@ function handle(m) {
   else if (m.type === "dial") dial(m);
   else if (m.type === "flash") { const s = $("shutter"); s.classList.remove("go"); void s.offsetWidth; s.classList.add("go"); }
   else if (m.type === "select") moveSel(m.delta);
+  else if (m.type === "gesture") {
+    const t = $("listenTxt"), p = $("listen");
+    t.textContent = m.text; p.style.borderColor = "var(--accent)";
+    clearTimeout(window._gT);
+    window._gT = setTimeout(() => { p.style.borderColor = ""; setListening(p.classList.contains("on")); }, 1500);
+  }
 }
 
 // ------------------------------------------------------------ rendering
