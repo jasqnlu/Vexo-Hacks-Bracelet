@@ -122,7 +122,7 @@
 <div class="start" id="start">
   <div style="text-align:center">
     <button id="go">Start camera HUD</button>
-    <p>Allow the camera when asked. Press M to mirror, C to hide captions.</p>
+    <p>Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions</p>
   </div>
 </div>
 
@@ -200,7 +200,7 @@ function renderRail() {
 }
 function setListening(on) {
   $("listen").classList.toggle("on", !!on);
-  $("listenTxt").textContent = on ? "listening (you only)" : "idle";
+  $("listenTxt").textContent = on ? "mic on · check-in only" : "mic off";
 }
 function caption(who, text) {
   const box = $("caps");
@@ -239,6 +239,12 @@ document.addEventListener("keydown", e => {
   if (e.key === "c" || e.key === "C") $("caps").style.display = $("caps").style.display === "none" ? "" : "none";
   if (e.key === "ArrowDown") moveSel(1);
   if (e.key === "ArrowUp") moveSel(-1);
+  // keyboard fallbacks for the band gestures (handy if the band acts up on stage)
+  const send = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+  if (e.key === "p" || e.key === "P") send({ type: "show" });
+  if (e.key === "ArrowLeft") send({ type: "dial_move", delta: -1 });
+  if (e.key === "ArrowRight") send({ type: "dial_move", delta: 1 });
+  if (e.key === "Enter") send({ type: "confirm" });
 });
 renderRail();
 </script>

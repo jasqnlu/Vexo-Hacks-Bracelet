@@ -5,3 +5,4 @@ provenance.jsonl
 last_turn.wav
 __pycache__/
 .playwright-mcp/
+.env.bak

@@ -29,6 +29,7 @@ class HudServer:
         self._sticky: dict[str, dict] = {}   # last message of each type, replayed to a tab that (re)connects
         self._runner: web.AppRunner | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self.on_message = None               # async fn(dict): keyboard fallbacks from the HUD (show, dial, confirm)
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self):
@@ -100,6 +101,13 @@ class HudServer:
                         self.frames_received += 1
                 elif m.type == WSMsgType.TEXT:
                     logger.debug(f"HUD says: {m.data[:200]}")
+                    if self.on_message:
+                        try:
+                            msg = json.loads(m.data)
+                            if isinstance(msg, dict):
+                                await self.on_message(msg)
+                        except Exception as e:               # noqa: BLE001  a bad message must not drop the tab
+                            logger.warning(f"HUD message: {e}")
         finally:
             self._clients.discard(ws)
             logger.info(f"HUD tab closed ({len(self._clients)} open)")

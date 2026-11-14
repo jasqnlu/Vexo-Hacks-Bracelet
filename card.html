@@ -106,7 +106,8 @@ function renderCard(c) {
     return `<div class="tile"><h3>${d}</h3>
       <div class="lvl"><span class="dot" style="background:${TONE(d,lvl)}"></span>${esc(LABEL(lvl))}</div>
       <p class="reported">${esc(v.reported) || "—"}</p>
-      ${v.quote ? `<p class="quote">“${esc(v.quote)}”</p>` : ""}</div>`;
+      ${v.quote ? `<p class="quote">“${esc(v.quote)}”</p>` : ""}
+      ${v.shown ? `<p class="quote" style="font-style:normal">📷 shown: ${esc(v.shown)}</p>` : ""}</div>`;
   }).join("") + "</div>";
   document.getElementById("notes").textContent = c.other_notes || "—";
   document.getElementById("fu").innerHTML = c.wearer_requested_followup

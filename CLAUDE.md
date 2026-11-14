@@ -72,6 +72,9 @@ Pipecat version: **1.16.0**. Its API changes often: check installed source befor
 | `card.html` | Clinician dashboard (pastel tiles per topic with 7-day mini bars, overview + topic chips, quotes + follow-up bar, 7-day timeline grid, data-flow stepper). Plain HTML/JS, no build step. |
 | `check_all.py` | Validates Deepgram + ElevenLabs keys and runs `bench_gemini.py`. Never prints keys. |
 | `bench_gemini.py` | Times first-token latency per Gemini model. |
+| `hud_bot.py` | **Camera HUD** version of the check-in ("talk, tilt, or show it something"). Imports `neurokind_bot` (unchanged). Adds wrist motion (roll → tilt dial, tap = show camera, double-tap = confirm), attaches ONE camera frame to Gemini on "here's…/look at…", tap, or P key; optional `shown` per topic, gated for diagnostic words + people. Flags as the bot plus `--port`, `--flip-dial`. Open http://localhost:8765. |
+| `hud_server.py` | aiohttp on 127.0.0.1: serves `hud.html`, receives JPEG frames over WebSocket (newest kept in memory only, never disk), pushes state/captions/cards/wrist/dial. Refuses foreign Origins. `python hud_server.py` = standalone camera test. |
+| `hud.html` | Full-screen camera HUD. Keys: P show camera · ← → dial · Enter confirm · M mirror · C captions. |
 | `env.example` | Template for `.env`. |
 | `requirements.txt` | `pipecat-ai[deepgram,google,elevenlabs,silero,local,mlx-whisper]`, bleak, av, numpy, python-dotenv. |
 
@@ -112,8 +115,9 @@ Done and tested:
 - Band connects (#1); mic capture works; Silero speech detection works in the noisy room (old loudness-based detector failed there); local Whisper transcribes correctly.
 - Pipecat pipeline runs end to end on the sim band (Deepgram transcribing, Gemini replying ~1.3 s TTFB).
 - Deepgram key OK. Gemini key OK. Safety gate blocks "shows signs of insomnia" and Gemini gets the fix list. Dashboard renders with synthetic history.
+Update ~2:10 PM: ElevenLabs fixed (voice was still a library voice → now default "Sarah" `EXAVITQu4vr4xnSDxMaL`, v4 Turbo works, TTFB ~0.18 s; the API key cannot list voices). Camera HUD (`hud_bot.py`) runs end to end on `--sim`: Gemini described a test image ("a plate with a sandwich and a red piece of fruit").
 Open / next:
-1. ElevenLabs voice: was 402 (library voice on free plan); voice ID was just replaced: verify with `check_all.py`.
+1. ~~ElevenLabs voice~~ done.
 2. **First full real-band check-in** producing a card (`neurokind_bot.py 1`). This is the milestone.
 3. Record `demo_checkin.ogg` (synthetic script incl. a name + phone number so redaction shows).
 4. Sync card schema with Alyshah.
