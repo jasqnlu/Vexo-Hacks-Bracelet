@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuroKind HUD</title>
+<style>
+  :root {
+    --ink: #f4f7fb; --dim: rgba(244,247,251,.62); --glass: rgba(14,18,28,.52);
+    --line: rgba(255,255,255,.14); --accent: #8fd3ff; --good: #9be7b0; --mid: #ffd98a;
+    --flag: #ff9b9b; --live: #ff5d5d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: #05070b; color: var(--ink);
+    font: 15px/1.4 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif; overflow: hidden; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video.mirror { transform: scaleX(-1); }
+  .vignette { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
+  .glass { background: var(--glass); backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2); border: 1px solid var(--line); border-radius: 14px; }
+
+  /* top bar */
+  .top { position: fixed; top: 18px; left: 18px; right: 18px; display: flex; gap: 10px; align-items: center; }
+  .brand { padding: 8px 14px; font-weight: 650; letter-spacing: .02em; }
+  .brand small { font-weight: 450; color: var(--dim); margin-left: 6px; }
+  .pill { padding: 8px 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5b6472; }
+  .pill.on { color: var(--ink); }
+  .pill.on .dot { background: var(--live); box-shadow: 0 0 0 0 rgba(255,93,93,.7); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(255,93,93,0); } 100% { box-shadow: 0 0 0 0 rgba(255,93,93,0); } }
+  .spacer { flex: 1; }
+  select { background: transparent; color: var(--ink); border: 0; font: inherit; font-size: 13px; max-width: 220px; }
+  select option { color: #000; }
+  .conn .dot { background: var(--mid); }
+  .conn.ok .dot { background: var(--good); }
+
+  /* topic rail */
+  .rail { position: fixed; left: 18px; top: 50%; transform: translateY(-50%); padding: 10px; width: 210px; }
+  .topic { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; color: var(--dim); }
+  .topic .n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line);
+    display: grid; place-items: center; font-size: 12px; }
+  .topic .lvl { margin-left: auto; font-size: 12px; }
+  .topic.now { background: rgba(143,211,255,.14); color: var(--ink); }
+  .topic.now .n { border-color: var(--accent); color: var(--accent); }
+  .topic.done .n { background: var(--good); color: #0b1a10; border-color: transparent; }
+  .lvl.flag { color: var(--flag); } .lvl.mid { color: var(--mid); } .lvl.good { color: var(--good); }
+  .topic .cam { font-size: 12px; }
+
+  /* cards */
+  .cards { position: fixed; right: 18px; top: 76px; bottom: 120px; width: 330px; display: flex;
+    flex-direction: column; gap: 10px; overflow: hidden; }
+  .card { padding: 12px 14px; animation: in .35s ease-out both; transition: opacity .25s, transform .25s; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card h3 { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .card.camera h3 { color: var(--mid); } .card.alert h3 { color: var(--flag); }
+  .card p { color: var(--ink); }
+  .card .meta { margin-top: 6px; font-size: 12px; color: var(--dim); }
+  @keyframes in { from { opacity: 0; transform: translateX(16px); } }
+
+  /* wrist dial */
+  .dial { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 80vw);
+    padding: 18px 20px 20px; text-align: center; display: none; }
+  .dial.show { display: block; animation: in .3s ease-out both; }
+  .dial .q { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+  .opts { display: flex; gap: 8px; }
+  .opt { flex: 1; padding: 12px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); transition: all .15s; }
+  .opt.hot { border-color: var(--accent); color: var(--ink); background: rgba(143,211,255,.18); transform: scale(1.04); }
+  .dial .hint { margin-top: 12px; font-size: 12px; color: var(--dim); }
+
+  /* captions */
+  .caps { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); width: min(760px, 92vw);
+    display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .cap { padding: 9px 14px; max-width: 100%; animation: in .25s ease-out both; }
+  .cap b { font-weight: 600; margin-right: 6px; color: var(--accent); }
+  .cap.you b { color: var(--good); }
+
+  /* wrist meter + shutter */
+  .wrist { position: fixed; left: 18px; bottom: 22px; padding: 10px 12px; font-size: 12px; color: var(--dim); width: 210px; }
+  .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); position: relative; margin: 6px 0 8px; }
+  .bar i { position: absolute; top: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); left: 50%; transform: translateX(-50%); transition: left .08s linear; }
+  .shutter { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  .shutter.go { animation: flash .5s ease-out; }
+  @keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
+  .start { position: fixed; inset: 0; display: grid; place-items: center; background: #05070b; z-index: 9; }
+  .start button { font: inherit; font-size: 16px; padding: 14px 22px; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(143,211,255,.16); color: var(--ink); cursor: pointer; }
+  .start p { color: var(--dim); margin-top: 12px; font-size: 13px; text-align: center; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted class="mirror"></video>
+<div class="vignette"></div>
+<div class="shutter" id="shutter"></div>
+
+<div class="top">
+  <div class="brand glass">NeuroKind<small>daily check-in</small></div>
+  <div class="pill glass" id="listen"><span class="dot"></span><span id="listenTxt">idle</span></div>
+  <div class="spacer"></div>
+  <div class="pill glass"><span>📷</span><select id="camSel" title="Camera"></select></div>
+  <div class="pill glass conn" id="conn"><span class="dot"></span><span id="connTxt">connecting</span></div>
+</div>
+
+<div class="rail glass" id="rail"></div>
+<div class="cards" id="cards"></div>
+
+<div class="dial glass" id="dial">
+  <div class="q" id="dialQ">Tilt your wrist to choose</div>
+  <div class="opts" id="opts"></div>
+  <div class="hint">tilt ↔ to choose · double-tap to confirm · or just say it</div>
+</div>
+
+<div class="caps" id="caps"></div>
+
+<div class="wrist glass">
+  wrist <span id="wristTxt">no band</span>
+  <div class="bar"><i id="rollDot"></i></div>
+  <div style="font-size:11px">images: sent only when you show something · never stored</div>
+</div>
+
+<div class="start" id="start">
+  <div style="text-align:center">
+    <button id="go">Start camera HUD</button>
+    <p>Allow the camera when asked. Press M to mirror, C to hide captions.</p>
+  </div>
+</div>
+
+<script>
+const TOPICS = ["sleep", "mood", "stress", "appetite"];
+const LEVEL_TONE = { good: "good", normal: "good", low: "flag", poor: "flag", high: "flag",
+  less_than_usual: "flag", more_than_usual: "flag", fair: "mid", okay: "mid", medium: "mid" };
+const $ = id => document.getElementById(id);
+const video = $("cam");
+let ws = null, stream = null, state = { topic: null, topics: {}, shown: {} };
+let cards = [], selected = -1;
+
+// ------------------------------------------------------------ camera
+async function listCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  const sel = $("camSel"), cur = sel.value;
+  sel.innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || "Camera " + (i + 1)}</option>`).join("");
+  if (cur) sel.value = cur;
+}
+async function startCamera(deviceId) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: deviceId ? { deviceId: { exact: deviceId }, width: 1280 } : { width: 1280 }, audio: false });
+  video.srcObject = stream;
+  await listCameras();
+  const label = stream.getVideoTracks()[0].label.toLowerCase();
+  video.classList.toggle("mirror", !/iphone|continuity|back/.test(label));   // a phone camera points away: no mirror
+}
+$("camSel").onchange = e => startCamera(e.target.value);
+$("go").onclick = async () => {
+  try { await startCamera(); $("start").remove(); }
+  catch (e) { $("start").querySelector("p").textContent = "Camera blocked: " + e.message; }
+};
+
+// one small JPEG about every second; the server keeps only the newest, in memory
+const canvas = document.createElement("canvas");
+setInterval(() => {
+  if (!ws || ws.readyState !== 1 || !video.videoWidth || ws.bufferedAmount > 200000) return;
+  const w = 640, h = Math.round(640 * video.videoHeight / video.videoWidth);
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+  canvas.toBlob(b => b && ws && ws.readyState === 1 && ws.send(b), "image/jpeg", 0.7);
+}, 1000);
+
+// ------------------------------------------------------------ server link
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { $("conn").classList.add("ok"); $("connTxt").textContent = "bot linked"; };
+  ws.onclose = () => { $("conn").classList.remove("ok"); $("connTxt").textContent = "bot offline"; setTimeout(connect, 1500); };
+  ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
+}
+connect();
+
+function handle(m) {
+  if (m.type === "state") { Object.assign(state, m); renderRail(); setListening(m.listening); }
+  else if (m.type === "caption") caption(m.who, m.text);
+  else if (m.type === "card") addCard(m);
+  else if (m.type === "wrist") wrist(m);
+  else if (m.type === "dial") dial(m);
+  else if (m.type === "flash") { const s = $("shutter"); s.classList.remove("go"); void s.offsetWidth; s.classList.add("go"); }
+  else if (m.type === "select") moveSel(m.delta);
+}
+
+// ------------------------------------------------------------ rendering
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function renderRail() {
+  $("rail").innerHTML = TOPICS.map((t, i) => {
+    const lvl = state.topics?.[t], done = lvl && lvl !== "not_discussed";
+    const cls = ["topic", state.topic === t ? "now" : "", done ? "done" : ""].join(" ");
+    const cam = state.shown?.[t] ? '<span class="cam" title="photo attached">📷</span>' : "";
+    return `<div class="${cls}"><span class="n">${done ? "✓" : i + 1}</span>${t}${cam}
+      <span class="lvl ${LEVEL_TONE[lvl] || ""}">${lvl ? esc(lvl.replaceAll("_", " ")) : ""}</span></div>`;
+  }).join("");
+}
+function setListening(on) {
+  $("listen").classList.toggle("on", !!on);
+  $("listenTxt").textContent = on ? "listening (you only)" : "idle";
+}
+function caption(who, text) {
+  const box = $("caps");
+  const el = document.createElement("div");
+  el.className = "cap glass " + (who === "you" ? "you" : "bot");
+  el.innerHTML = `<b>${who === "you" ? "You" : "NeuroKind"}</b>${esc(text)}`;
+  box.appendChild(el);
+  while (box.children.length > 2) box.firstChild.remove();
+}
+function addCard(c) {
+  cards = cards.filter(x => x.id !== c.id);
+  cards.unshift(c);
+  cards = cards.slice(0, 12);
+  selected = 0;
+  renderCards();
+}
+function renderCards() {
+  $("cards").innerHTML = cards.map((c, i) => `<div class="card glass ${esc(c.kind || "info")} ${i === selected ? "sel" : ""}">
+      <h3>${esc(c.title)}</h3><p>${esc(c.body)}</p>${c.meta ? `<div class="meta">${esc(c.meta)}</div>` : ""}</div>`).join("");
+}
+function moveSel(d) { if (!cards.length) return; selected = Math.max(0, Math.min(cards.length - 1, selected + d)); renderCards(); }
+function wrist(m) {
+  $("wristTxt").textContent = `roll ${m.roll.toFixed(0)}°  pitch ${m.pitch.toFixed(0)}°`;
+  $("rollDot").style.left = (50 + Math.max(-45, Math.min(45, m.roll)) / 45 * 50) + "%";
+}
+function dial(m) {
+  const d = $("dial");
+  d.classList.toggle("show", !!m.active);
+  if (!m.active) return;
+  $("dialQ").textContent = m.question || `How was your ${m.topic}?`;
+  $("opts").innerHTML = m.options.map((o, i) => `<div class="opt ${i === m.index ? "hot" : ""}">${esc(o.replaceAll("_", " "))}</div>`).join("");
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "m" || e.key === "M") video.classList.toggle("mirror");
+  if (e.key === "c" || e.key === "C") $("caps").style.display = $("caps").style.display === "none" ? "" : "none";
+  if (e.key === "ArrowDown") moveSel(1);
+  if (e.key === "ArrowUp") moveSel(-1);
+});
+renderRail();
+</script>
+</body>
+</html>
