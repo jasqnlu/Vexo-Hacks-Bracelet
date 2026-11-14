@@ -36,7 +36,18 @@ class HudServer:
     # ---------------------------------------------------------------- lifecycle
     async def start(self):
         self._loop = asyncio.get_running_loop()
-        app = web.Application()
+        allowed = {f"localhost:{self.port}", f"127.0.0.1:{self.port}"}
+
+        @web.middleware
+        async def host_guard(request, handler):
+            # DNS rebinding: a website can point its own domain at 127.0.0.1, and the browser then lets
+            # that page read our responses. Its requests carry ITS hostname in Host, so allow only ours.
+            if request.headers.get("Host", "").lower() not in allowed:
+                logger.warning(f"HUD: refused request with Host {request.headers.get('Host')!r}")
+                raise web.HTTPForbidden()
+            return await handler(request)
+
+        app = web.Application(middlewares=[host_guard])
         app.router.add_get("/", self._index)
         app.router.add_get("/ws", self._ws)
         # Clinician dashboard. Only these exact files are served, never the folder (.env lives there).
