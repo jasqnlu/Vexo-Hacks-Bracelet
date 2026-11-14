@@ -44,6 +44,15 @@ TOPICS = guardrails.DOMAINS                     # sleep, mood, stress, appetite
 # Dial order, left to right on screen (the HUD shows them in this order).
 DIAL = {"sleep": ["poor", "fair", "good"], "mood": ["low", "okay", "good"],
         "stress": ["low", "medium", "high"], "appetite": ["less_than_usual", "normal", "more_than_usual"]}
+# The dial shows SKIP first (tilt all the way left), then the three answers. A resting wrist = the middle answer.
+SKIP = "skip"
+REST = 2                                        # index of the middle answer in [skip, a, b, c]
+EDGES = (-36.0, -14.0, 14.0)                    # tilt (deg) between skip|a, a|b, b|c
+HYST = 4.0                                      # cross an edge by this much to move; so in at 18°, out at 10°
+
+
+def dial_options(topic: str) -> list[str]:
+    return [SKIP] + DIAL[topic]
 TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?)\b", "mood": r"\b(mood|feeling)\b",
             "stress": r"\bstress(ed|ful)?\b", "appetite": r"\b(appetite|eat(ing)?|ate|food|meals?|hungry)\b"}
 SHOW_RE = re.compile(r"\b(here'?s|here is|look(ing)? at|take a look|see this|this is my|show(ing)? you|"
@@ -65,7 +74,8 @@ about half eaten"). Never describe people, faces, or bodies, and never guess abo
 If the image is not about the check-in, answer in one sentence and return to the check-in.
 
 Sometimes a message says the wearer chose an answer with a wrist tilt: treat it as their answer for that
-topic, acknowledge in a few words, and go on to the next topic."""
+topic, acknowledge in a few words, and go on to the next topic. If they chose to skip a topic, say that's
+fine, don't ask about it again, and submit it as not_discussed with reported "Wearer chose to skip this topic"."""
 
 
 # ------------------------------------------------------------------ shared check-in state
@@ -83,7 +93,7 @@ class Session:
         self.topic = None
         self.levels: dict[str, str] = {}
         self.shown: dict[str, bool] = {}
-        self.dial_index = 1
+        self.dial_index = REST
         self.dial_on = False
         self.last_attach = 0.0
         self.last_roll = 0.0
@@ -96,7 +106,7 @@ class Session:
     async def push_dial(self):
         if self.topic:
             await self.hud.send({"type": "dial", "active": self.dial_on, "topic": self.topic,
-                                 "options": DIAL[self.topic], "index": self.dial_index,
+                                 "options": dial_options(self.topic), "index": self.dial_index,
                                  "dwell": self.dwell if (self.dial_armed and self.dial_on) else 0,
                                  "question": f"{self.topic.capitalize()}: tilt to choose"})
 
@@ -110,7 +120,7 @@ class Session:
         if new != self.topic and new not in self.levels:
             if self.topic and self.topic not in self.levels:
                 self.levels[self.topic] = "said"          # answered by voice; the level arrives with the summary
-            self.topic, self.dial_index, self.dial_on = new, 1, True
+            self.topic, self.dial_index, self.dial_on = new, REST, True
             self.roll_zero = None                         # re-centre on the wrist's next reading
             self.dial_armed = False                       # resting wrist = middle, so don't start a hold yet
             self._cancel_dwell()
@@ -131,14 +141,11 @@ class Session:
             asyncio.run_coroutine_threadsafe(self.set_index(idx), self.loop)
 
     def _pick(self, r: float) -> int:
-        """Tilt angle -> option, with hysteresis: enter a side at 18°, leave it below 10°, so hand shake
-        near the edge doesn't flip between options (and restart the hold)."""
-        i = self.dial_index
-        if i == 0:
-            return 0 if r < -10 else 2 if r > 18 else 1
-        if i == 2:
-            return 2 if r > 10 else 0 if r < -18 else 1
-        return 0 if r < -18 else 2 if r > 18 else 1
+        """Tilt angle -> option index, with hysteresis: to cross an edge you must pass it by HYST degrees,
+        so hand shake near an edge doesn't flip between options (and restart the hold).
+        Answers: in at ±18°, out at ±10°. Skip: in past -40°, out at -32°."""
+        c = self.dial_index
+        return sum(r > (e + HYST if c <= k else e - HYST) for k, e in enumerate(EDGES))
 
     async def set_index(self, idx: int):
         if not self.dial_on or idx == self.dial_index:
@@ -162,22 +169,25 @@ class Session:
 
     async def move_dial(self, delta: int):
         if self.dial_on:
-            await self.set_index(max(0, min(2, self.dial_index + delta)))
+            await self.set_index(max(0, min(len(EDGES), self.dial_index + delta)))
 
     async def confirm_dial(self, how: str = "double-tap"):
         if not (self.dial_on and self.topic and self.task):
             return
         self._cancel_dwell()
-        topic, level = self.topic, DIAL[self.topic][self.dial_index]
-        self.levels[topic], self.dial_on, self.dial_armed = level, False, False
+        topic, level = self.topic, dial_options(self.topic)[self.dial_index]
+        skipped = level == SKIP
+        self.levels[topic], self.dial_on, self.dial_armed = ("skipped" if skipped else level), False, False
         prov.log("wrist->llm", "dial answer (one word)", "Gemini (Google)", topic=topic, how=how)
         await self.hud.send({"type": "dial", "active": False, "topic": topic, "chosen": self.dial_index},
                             sticky=False)                 # HUD flashes the chosen option, then hides the dial
         await self.push_state()
-        await self.hud.send({"type": "card", "id": topic, "title": topic, "body": level.replace("_", " "),
+        await self.hud.send({"type": "card", "id": topic, "title": topic,
+                             "body": "skipped" if skipped else level.replace("_", " "),
                              "meta": f"chosen with a wrist tilt ({'held' if how == 'hold' else how})"},
                             sticky=False)
         self.context.add_message({"role": "user", "content":
+                                  f"(With a wrist tilt, the wearer chose to skip {topic}.)" if skipped else
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
         await self.task.queue_frames([LLMRunFrame()])
 
