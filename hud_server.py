@@ -1,6 +1,7 @@
 """HUD server: the bridge between the browser HUD (camera + overlays) and the bot.
 
   python3 hud_server.py            standalone test: open http://localhost:8765, allow the camera
+                                   (also serves the clinician dashboard: http://localhost:8765/dashboard)
 
 The browser owns the camera. It sends a small JPEG over a WebSocket about once a second; this
 server keeps ONLY the latest frame, in memory (never written to disk), so the bot can attach it
@@ -9,6 +10,7 @@ HUD tab: check-in state, cards, wrist pose. Bound to 127.0.0.1: nothing outside 
 """
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 
@@ -37,10 +39,14 @@ class HudServer:
         app = web.Application()
         app.router.add_get("/", self._index)
         app.router.add_get("/ws", self._ws)
+        # Clinician dashboard. Only these exact files are served, never the folder (.env lives there).
+        app.router.add_get("/dashboard", self._dashboard)
+        app.router.add_get("/cards/{name}", self._card_file)
+        app.router.add_get("/provenance.jsonl", self._provenance)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         await web.TCPSite(self._runner, self.host, self.port).start()
-        logger.info(f"HUD: open http://localhost:{self.port}")
+        logger.info(f"HUD: open http://localhost:{self.port}   ·   dashboard: http://localhost:{self.port}/dashboard")
 
     async def stop(self):
         for ws in list(self._clients):
@@ -78,6 +84,22 @@ class HudServer:
     # ---------------------------------------------------------------- routes
     async def _index(self, request):
         return web.FileResponse(HERE / "hud.html", headers={"Cache-Control": "no-store"})
+
+    async def _dashboard(self, request):
+        return web.FileResponse(HERE / "card.html", headers={"Cache-Control": "no-store"})
+
+    async def _card_file(self, request):
+        name = request.match_info["name"]
+        f = HERE / "cards" / name
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}\.json", name) or not f.is_file():
+            raise web.HTTPNotFound()          # card.html treats a missing file as "no data yet"
+        return web.FileResponse(f, headers={"Cache-Control": "no-store"})
+
+    async def _provenance(self, request):
+        f = HERE / "provenance.jsonl"
+        if not f.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(f, headers={"Cache-Control": "no-store"})
 
     async def _ws(self, request):
         # Browsers don't apply same-origin rules to WebSockets: without this check any website open in
