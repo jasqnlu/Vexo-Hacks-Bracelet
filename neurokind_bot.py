@@ -314,7 +314,7 @@ async def main():
     prov.log("llm->tts", "agent reply text", "ElevenLabs (cloud)")
 
     # Greet first: the bot opens the check-in.
-    context.add_message({"role": "user", "content": "(The wearer just started a check-in. Greet them briefly and ask about sleep.)"})
+    context.add_message({"role": "user", "content": "(The wearer just started a check-in. Greet them briefly and ask how their day was.)"})
     await task.queue_frames([LLMRunFrame()])
 
     async def hard_stop():
