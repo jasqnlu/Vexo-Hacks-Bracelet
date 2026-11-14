@@ -1,4 +1,4 @@
-# NeuroKind — VexoHacks build context
+# Tend — VexoHacks build context
 
 Read this whole file before changing anything. It is the shared context for this repo.
 
@@ -17,7 +17,7 @@ Read this whole file before changing anything. It is the shared context for this
 - Machine: MacBook (Apple Silicon M5, 16 GB). Python 3.12 venv in `.venv` (Homebrew Python 3.14 is too new for some deps: always `source .venv/bin/activate`).
 
 ## The product
-A **voice-first daily wellbeing check-in on the Vexo wrist band**. The wearer double-taps the band, a voice agent asks about **sleep, mood, stress, appetite** one at a time, and the output is a **structured, non-diagnostic summary card** a clinician can scan in seconds, plus a **provenance record** of where every piece of data went.
+**Tend** (product name; by NeuroKind) is a **voice-first daily wellbeing check-in on the Vexo wrist band**. The wearer double-taps the band, a voice agent asks about **sleep, mood, stress, appetite** one at a time, and the output is a **structured, non-diagnostic summary card** a clinician can scan in seconds, plus a **provenance record** of where every piece of data went.
 
 Hard rules (do not break these):
 - **Non-diagnostic.** Report only what the wearer said. Never name a condition, never interpret, never give medical advice. The safety gate enforces this.

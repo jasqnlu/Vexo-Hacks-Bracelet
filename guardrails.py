@@ -1,4 +1,4 @@
-"""NeuroKind guardrails: local redaction, provenance log, safety gate. No network, no extra installs."""
+"""Tend guardrails: local redaction, provenance log, safety gate. No network, no extra installs."""
 import json
 import re
 import time

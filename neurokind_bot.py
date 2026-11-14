@@ -1,4 +1,4 @@
-"""NeuroKind check-in bot: Vexo band -> Pipecat -> (Deepgram | local Whisper) -> redaction -> Gemini -> ElevenLabs.
+"""Tend check-in bot: Vexo band -> Pipecat -> (Deepgram | local Whisper) -> redaction -> Gemini -> ElevenLabs.
 
   python3 neurokind_bot.py --sim                         pretend band speaking the kit's sample
   python3 neurokind_bot.py 42                            real band 42 (double-tap it first)
@@ -147,7 +147,7 @@ class Redactor(FrameProcessor):
 
 
 # ------------------------------------------------------------------ prompt + tool
-SYSTEM = """You are NeuroKind, a calm voice companion running a short daily wellbeing check-in
+SYSTEM = """You are Tend, a calm voice companion running a short daily wellbeing check-in
 through a wrist band. Your reply is spoken aloud, so keep each turn to one or two short sentences,
 plain words, no lists, no emoji.
 

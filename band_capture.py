@@ -1,4 +1,4 @@
-"""NeuroKind on-device audio layer: Vexo band -> local PCM -> quality checks -> local Whisper.
+"""Tend on-device audio layer: Vexo band -> local PCM -> quality checks -> local Whisper.
 
 Raw audio never leaves this machine. Only (redacted) text is handed to the agent.
 

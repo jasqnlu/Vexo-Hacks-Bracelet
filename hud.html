@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NeuroKind HUD</title>
+<title>Tend HUD</title>
 <style>
   :root {
     --ink: #f4f7fb; --dim: rgba(244,247,251,.62); --glass: rgba(14,18,28,.52);
@@ -95,7 +95,7 @@
 <div class="shutter" id="shutter"></div>
 
 <div class="top">
-  <div class="brand glass">NeuroKind<small>daily check-in</small></div>
+  <div class="brand glass">Tend<small>daily check-in</small></div>
   <div class="pill glass" id="listen"><span class="dot"></span><span id="listenTxt">idle</span></div>
   <div class="spacer"></div>
   <div class="pill glass"><span>📷</span><select id="camSel" title="Camera"></select></div>
@@ -212,7 +212,7 @@ function caption(who, text) {
   const box = $("caps");
   const el = document.createElement("div");
   el.className = "cap glass " + (who === "you" ? "you" : "bot");
-  el.innerHTML = `<b>${who === "you" ? "You" : "NeuroKind"}</b>${esc(text)}`;
+  el.innerHTML = `<b>${who === "you" ? "You" : "Tend"}</b>${esc(text)}`;
   box.appendChild(el);
   while (box.children.length > 2) box.firstChild.remove();
 }

@@ -1,4 +1,4 @@
-"""NeuroKind with a camera HUD: talk, tilt, or show it something.
+"""Tend with a camera HUD: talk, tilt, or show it something.
 
   python3 hud_bot.py --sim --max-minutes 2          pretend band, then open http://localhost:8765
   python3 hud_bot.py 1 --max-minutes 3              real band 1 (double-tap it first)
