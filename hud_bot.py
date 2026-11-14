@@ -7,7 +7,8 @@ Same check-in as neurokind_bot.py (which stays unchanged as the fallback demo), 
   - hud.html shows the camera, the topic list, captions, a wrist-tilt dial and answer cards
   - showing something attaches ONE camera frame to Gemini: say "here's my lunch" / "look at this",
     or press P on the HUD (no band tap: a flick reads as a tap). Frames live only in memory; nothing is saved.
-  - the dial: tilt the wrist to pick an answer, double-tap (or Enter on the HUD) to confirm
+  - the dial: tilt the wrist to pick an answer, HOLD it there --dwell 1.2 s to confirm (a bar fills);
+    double-tap (or Enter on the HUD) confirms at once
   - the card gets an optional `shown` line per topic (objects only, never people), safety-gated
 HUD keys: P show camera · ← → move the dial · Enter confirm · M mirror · C captions.
 """
@@ -71,8 +72,11 @@ topic, acknowledge in a few words, and go on to the next topic."""
 class Session:
     """What the HUD shows. Touched from the event loop; band callbacks hop onto it via the loop."""
 
-    def __init__(self, hud: HudServer, flip_dial=False):
+    def __init__(self, hud: HudServer, flip_dial=False, dwell=1.2):
         self.hud, self.flip = hud, flip_dial
+        self.dwell = dwell                                # seconds to hold a tilt before it confirms (0 = off)
+        self.dial_armed = False                           # dwell counts only after the wrist has moved once
+        self._dwell_task = None
         self.loop = None
         self.task = None
         self.context = None
@@ -93,6 +97,7 @@ class Session:
         if self.topic:
             await self.hud.send({"type": "dial", "active": self.dial_on, "topic": self.topic,
                                  "options": DIAL[self.topic], "index": self.dial_index,
+                                 "dwell": self.dwell if (self.dial_armed and self.dial_on) else 0,
                                  "question": f"{self.topic.capitalize()}: tilt to choose"})
 
     async def bot_said(self, text: str):
@@ -107,6 +112,8 @@ class Session:
                 self.levels[self.topic] = "said"          # answered by voice; the level arrives with the summary
             self.topic, self.dial_index, self.dial_on = new, 1, True
             self.roll_zero = None                         # re-centre on the wrist's next reading
+            self.dial_armed = False                       # resting wrist = middle, so don't start a hold yet
+            self._cancel_dwell()
             await self.push_state()
             await self.push_dial()
 
@@ -119,26 +126,57 @@ class Session:
             self.roll_zero = roll
         r = (roll - self.roll_zero + 180) % 360 - 180     # tilt relative to that, wrapped to -180..180
         r = -r if self.flip else r
-        idx = 0 if r < -15 else 2 if r > 15 else 1
+        idx = self._pick(r)
         if idx != self.dial_index:
-            self.dial_index = idx
-            asyncio.run_coroutine_threadsafe(self.push_dial(), self.loop)
+            asyncio.run_coroutine_threadsafe(self.set_index(idx), self.loop)
+
+    def _pick(self, r: float) -> int:
+        """Tilt angle -> option, with hysteresis: enter a side at 18°, leave it below 10°, so hand shake
+        near the edge doesn't flip between options (and restart the hold)."""
+        i = self.dial_index
+        if i == 0:
+            return 0 if r < -10 else 2 if r > 18 else 1
+        if i == 2:
+            return 2 if r > 10 else 0 if r < -18 else 1
+        return 0 if r < -18 else 2 if r > 18 else 1
+
+    async def set_index(self, idx: int):
+        if not self.dial_on or idx == self.dial_index:
+            return
+        self.dial_index, self.dial_armed = idx, True
+        self._cancel_dwell()
+        if self.dwell > 0:
+            self._dwell_task = asyncio.create_task(self._hold(self.topic, idx))
+        await self.push_dial()
+
+    def _cancel_dwell(self):
+        if self._dwell_task:
+            self._dwell_task.cancel()
+            self._dwell_task = None
+
+    async def _hold(self, topic: str, idx: int):
+        await asyncio.sleep(self.dwell)
+        if self.dial_on and self.topic == topic and self.dial_index == idx:
+            self._dwell_task = None                       # we are that task: don't let confirm cancel us
+            await self.confirm_dial(how="hold")
 
     async def move_dial(self, delta: int):
         if self.dial_on:
-            self.dial_index = max(0, min(2, self.dial_index + delta))
-            await self.push_dial()
+            await self.set_index(max(0, min(2, self.dial_index + delta)))
 
-    async def confirm_dial(self):
+    async def confirm_dial(self, how: str = "double-tap"):
         if not (self.dial_on and self.topic and self.task):
             return
+        self._cancel_dwell()
         topic, level = self.topic, DIAL[self.topic][self.dial_index]
-        self.levels[topic], self.dial_on = level, False
-        prov.log("wrist->llm", "dial answer (one word)", "Gemini (Google)", topic=topic)
-        await self.push_dial()
+        self.levels[topic], self.dial_on, self.dial_armed = level, False, False
+        prov.log("wrist->llm", "dial answer (one word)", "Gemini (Google)", topic=topic, how=how)
+        await self.hud.send({"type": "dial", "active": False, "topic": topic, "chosen": self.dial_index},
+                            sticky=False)                 # HUD flashes the chosen option, then hides the dial
         await self.push_state()
         await self.hud.send({"type": "card", "id": topic, "title": topic, "body": level.replace("_", " "),
-                             "meta": "chosen with a wrist tilt"}, sticky=False)
+                             "meta": f"chosen with a wrist tilt ({'held' if how == 'hold' else how})"},
+                            sticky=False)
         self.context.add_message({"role": "user", "content":
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
         await self.task.queue_frames([LLMRunFrame()])
@@ -362,6 +400,7 @@ def make_submit(session: Session):
         except Exception as e:                            # noqa: BLE001
             logger.warning(f"trends: {e}")
         # HUD: final levels + one card per topic
+        session._cancel_dwell()
         session.topic, session.dial_on = None, False
         for t in TOPICS:
             v = summary.get(t) or {}
@@ -390,6 +429,8 @@ async def main():
     ap.add_argument("--max-minutes", type=float, default=4, help="hard stop so a forgotten run can't burn credits")
     ap.add_argument("--no-speaker", action="store_true")
     ap.add_argument("--flip-dial", action="store_true", help="if tilting right moves the dial left")
+    ap.add_argument("--dwell", type=float, default=1.2,
+                    help="seconds to hold a tilt before it confirms (0 = double-tap / Enter only)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--turn-silence", type=float, default=1.5,
                     help="max seconds of silence before the bot answers (Pipecat default 3)")
@@ -401,7 +442,7 @@ async def main():
 
     hud = HudServer(port=a.port)
     await hud.start()
-    session = Session(hud, flip_dial=a.flip_dial)
+    session = Session(hud, flip_dial=a.flip_dial, dwell=a.dwell)
     session.loop = asyncio.get_running_loop()
     hud.on_message = session.on_hud_message
 

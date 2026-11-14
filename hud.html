@@ -64,7 +64,13 @@
   .dial.show { display: block; animation: in .3s ease-out both; }
   .dial .q { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
   .opts { display: flex; gap: 8px; }
-  .opt { flex: 1; padding: 12px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); transition: all .15s; }
+  .opt { flex: 1; padding: 12px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); transition: all .15s;
+    position: relative; overflow: hidden; }
+  .opt span { position: relative; }
+  .opt.fill::before { content: ""; position: absolute; inset: 0; background: rgba(143,211,255,.30);
+    transform-origin: left; animation: fill var(--dwell) linear forwards; }
+  .opt.chosen { border-color: #8fe3b0; color: var(--ink); background: rgba(143,227,176,.30); transform: scale(1.08); }
+  @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   .opt.hot { border-color: var(--accent); color: var(--ink); background: rgba(143,211,255,.18); transform: scale(1.04); }
   .dial .hint { margin-top: 12px; font-size: 12px; color: var(--dim); }
 
@@ -108,7 +114,7 @@
 <div class="dial glass" id="dial">
   <div class="q" id="dialQ">Tilt your wrist to choose</div>
   <div class="opts" id="opts"></div>
-  <div class="hint">tilt ↔ to choose · double-tap to confirm · or just say it</div>
+  <div class="hint">tilt ↔ to choose · hold to confirm · double-tap = now · or just say it</div>
 </div>
 
 <div class="caps" id="caps"></div>
@@ -234,10 +240,20 @@ function wrist(m) {
 }
 function dial(m) {
   const d = $("dial");
+  clearTimeout(window._dialT);
+  if (m.chosen != null) {                       // confirmed: flash the pick green, then hide
+    const o = $("opts").children[m.chosen];
+    if (o) { o.className = "opt chosen"; o.firstChild.textContent = "✓ " + o.firstChild.textContent; }
+    window._dialT = setTimeout(() => d.classList.remove("show"), 700);
+    return;
+  }
   d.classList.toggle("show", !!m.active);
   if (!m.active) return;
   $("dialQ").textContent = m.question || `How was your ${m.topic}?`;
-  $("opts").innerHTML = m.options.map((o, i) => `<div class="opt ${i === m.index ? "hot" : ""}">${esc(o.replaceAll("_", " "))}</div>`).join("");
+  $("opts").innerHTML = m.options.map((o, i) => {
+    const hot = i === m.index, fill = hot && m.dwell > 0;
+    return `<div class="opt ${hot ? "hot" : ""} ${fill ? "fill" : ""}" style="--dwell:${m.dwell || 0}s"><span>${esc(o.replaceAll("_", " "))}</span></div>`;
+  }).join("");
 }
 
 document.addEventListener("keydown", e => {
