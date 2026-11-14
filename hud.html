@@ -139,7 +139,7 @@ let cards = [], selected = -1;
 async function listCameras() {
   const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
   const sel = $("camSel"), cur = sel.value;
-  sel.innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || "Camera " + (i + 1)}</option>`).join("");
+  sel.innerHTML = devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || "Camera " + (i + 1))}</option>`).join("");
   if (cur) sel.value = cur;
 }
 async function startCamera(deviceId) {
