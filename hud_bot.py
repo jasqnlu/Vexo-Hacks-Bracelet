@@ -327,6 +327,8 @@ async def main():
     ap.add_argument("--no-speaker", action="store_true")
     ap.add_argument("--flip-dial", action="store_true", help="if tilting right moves the dial left")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--turn-silence", type=float, default=1.5,
+                    help="max seconds of silence before the bot answers (Pipecat default 3)")
     a = ap.parse_args()
     if not a.sim and a.number is None:
         ap.error("give your band number, or --sim")
@@ -375,7 +377,16 @@ async def main():
     context = LLMContext(messages=[{"role": "system", "content": nk.SYSTEM + HUD_EXTRA}],
                          tools=ToolsSchema(standard_tools=[tool]))
     session.context = context
-    aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
+    # Smart Turn (local model) decides when the wearer is done. If it thinks they're mid-sentence it waits for
+    # this much silence before answering anyway (Pipecat's default is 3 s; short check-in answers hit that often).
+    from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+    from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+    from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
+    from pipecat.turns.user_turn_strategies import UserTurnStrategies
+    turns = UserTurnStrategies(stop=[TurnAnalyzerUserTurnStopStrategy(
+        turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
+    aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
+        vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns))
 
     procs = [band_in, stt, nk.Redactor(stt_dest), CameraAndCaptions(session), aggs.user(), llm,
              BotCaptions(session), tts]

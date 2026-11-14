@@ -115,6 +115,7 @@ Done and tested:
 - Band connects (#1); mic capture works; Silero speech detection works in the noisy room (old loudness-based detector failed there); local Whisper transcribes correctly.
 - Pipecat pipeline runs end to end on the sim band (Deepgram transcribing, Gemini replying ~1.3 s TTFB).
 - Deepgram key OK. Gemini key OK. Safety gate blocks "shows signs of insomnia" and Gemini gets the fix list. Dashboard renders with synthetic history.
+Update ~2:35 PM: GEMINI_MODEL in .env was EMPTY (bot fell back to slow Argon) → set to gemini-4-hydrogen (bench 1.6–2.2 s vs Argon 2.1–2.5 s; thinking "minimal" is not supported, "low" is the floor). hud_bot caps Smart Turn wait at 1.5 s (`--turn-silence`, Pipecat default 3 s).
 Update ~2:10 PM: ElevenLabs fixed (voice was still a library voice → now default "Sarah" `EXAVITQu4vr4xnSDxMaL`, v4 Turbo works, TTFB ~0.18 s; the API key cannot list voices). Camera HUD (`hud_bot.py`) runs end to end on `--sim`: Gemini described a test image ("a plate with a sandwich and a red piece of fruit").
 Open / next:
 1. ~~ElevenLabs voice~~ done.
