@@ -82,6 +82,8 @@ class Session:
         self.dial_index = 1
         self.dial_on = False
         self.last_attach = 0.0
+        self.last_roll = 0.0
+        self.roll_zero = None                             # set when a dial appears (see on_roll)
 
     async def push_state(self, listening=True):
         await self.hud.send({"type": "state", "topic": self.topic, "listening": listening,
@@ -104,14 +106,19 @@ class Session:
             if self.topic and self.topic not in self.levels:
                 self.levels[self.topic] = "said"          # answered by voice; the level arrives with the summary
             self.topic, self.dial_index, self.dial_on = new, 1, True
+            self.roll_zero = None                         # re-centre on the wrist's next reading
             await self.push_state()
             await self.push_dial()
 
     # -------------------------------------------------------------- wrist dial
     def on_roll(self, roll: float):                       # band thread
+        self.last_roll = roll
         if not self.dial_on or self.loop is None:
             return
-        r = -roll if self.flip else roll
+        if self.roll_zero is None:                        # however the wrist rests when the dial appears = middle
+            self.roll_zero = roll
+        r = (roll - self.roll_zero + 180) % 360 - 180     # tilt relative to that, wrapped to -180..180
+        r = -r if self.flip else r
         idx = 0 if r < -15 else 2 if r > 15 else 1
         if idx != self.dial_index:
             self.dial_index = idx
