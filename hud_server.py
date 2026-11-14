@@ -79,6 +79,13 @@ class HudServer:
         return web.FileResponse(HERE / "hud.html", headers={"Cache-Control": "no-store"})
 
     async def _ws(self, request):
+        # Browsers don't apply same-origin rules to WebSockets: without this check any website open in
+        # the browser could read the check-in or inject camera frames. Browsers always send Origin;
+        # a local script (no Origin) is already on this Mac, so it is allowed.
+        origin = request.headers.get("Origin")
+        if origin is not None and origin not in (f"http://localhost:{self.port}", f"http://127.0.0.1:{self.port}"):
+            logger.warning(f"HUD: refused WebSocket from {origin}")
+            raise web.HTTPForbidden()
         ws = web.WebSocketResponse(max_msg_size=MAX_FRAME_BYTES, heartbeat=20)
         await ws.prepare(request)
         self._clients.add(ws)
