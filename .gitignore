@@ -1,0 +1,6 @@
+.env
+vexo-open-kit/
+cards/
+provenance.jsonl
+last_turn.wav
+__pycache__/

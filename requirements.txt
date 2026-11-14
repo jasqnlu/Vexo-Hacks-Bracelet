@@ -1,0 +1,5 @@
+pipecat-ai[deepgram,google,elevenlabs,silero,local,mlx-whisper]
+bleak
+av
+numpy
+python-dotenv
