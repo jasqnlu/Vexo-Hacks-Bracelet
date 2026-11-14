@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,7 +32,8 @@ from vexo_open.sync import Band                      # noqa: E402
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema       # noqa: E402
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema             # noqa: E402
 from pipecat.audio.vad.silero import SileroVADAnalyzer                    # noqa: E402
-from pipecat.frames.frames import (EndFrame, Frame, InputAudioRawFrame,   # noqa: E402
+from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,  # noqa: E402
+                                   EndFrame, Frame, InputAudioRawFrame,   # noqa: E402
                                    LLMRunFrame, StartFrame, TranscriptionFrame, TTSSpeakFrame)
 from pipecat.pipeline.pipeline import Pipeline                            # noqa: E402
 from pipecat.pipeline.runner import PipelineRunner                        # noqa: E402
@@ -40,6 +42,8 @@ from pipecat.processors.aggregators.llm_context import LLMContext         # noqa
 from pipecat.processors.aggregators.llm_response_universal import (       # noqa: E402
     LLMContextAggregatorPair, LLMUserAggregatorParams)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # noqa: E402
+from pipecat.turns.user_mute.base_user_mute_strategy import BaseUserMuteStrategy  # noqa: E402
+from pipecat.turns.user_turn_strategies import UserTurnStrategies                 # noqa: E402
 from pipecat.transports.base_input import BaseInputTransport              # noqa: E402
 from pipecat.transports.base_transport import TransportParams             # noqa: E402
 
@@ -126,6 +130,37 @@ class VexoBandInput(BaseInputTransport):
 
 
 # ------------------------------------------------------------------ redaction
+class MuteWhileBotSpeaks(BaseUserMuteStrategy):
+    """Ignore the band mic while the bot is talking, plus a short tail.
+
+    Pipecat's default lets any speech the mic hears interrupt the bot. The band mic stays open while
+    the bot talks, so its own voice from the Mac speakers (or room noise) cut it off mid-sentence.
+    A check-in has short bot turns, so the wearer simply answers after the question."""
+
+    def __init__(self, tail: float = 0.5):
+        super().__init__()
+        self._speaking, self._until, self._tail = False, 0.0, tail
+
+    async def process_frame(self, frame: Frame) -> bool:
+        await super().process_frame(frame)
+        if isinstance(frame, BotStartedSpeakingFrame):
+            self._speaking = True
+        elif isinstance(frame, BotStoppedSpeakingFrame):
+            self._speaking, self._until = False, time.monotonic() + self._tail   # echo dies out
+        return self._speaking or time.monotonic() < self._until
+
+
+def calm_turn_start():
+    """Pipecat's default turn-start strategies, but speech never INTERRUPTS the bot.
+
+    With interruptions on, anything the band mic hears while Gemini is still thinking (room noise,
+    the wearer adding a word) cancels the reply being prepared, so the bot went quiet or skipped part
+    of what it meant to say. The wearer's words are still collected and answered after the bot is done."""
+    from pipecat.turns.user_start import TranscriptionUserTurnStartStrategy, VADUserTurnStartStrategy
+    return [VADUserTurnStartStrategy(enable_interruptions=False),
+            TranscriptionUserTurnStartStrategy(enable_interruptions=False)]
+
+
 class Redactor(FrameProcessor):
     """Sits between STT and the LLM: names/phones/addresses/dates never reach Gemini."""
 
@@ -264,7 +299,9 @@ async def main():
 
     context = LLMContext(messages=[{"role": "system", "content": SYSTEM}],
                          tools=ToolsSchema(standard_tools=[make_summary_tool()]))
-    aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
+    aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
+        vad_analyzer=SileroVADAnalyzer(), user_mute_strategies=[MuteWhileBotSpeaks()],
+        user_turn_strategies=UserTurnStrategies(start=calm_turn_start())))
 
     procs = [band_in, stt, Redactor(stt_dest), aggs.user(), llm, tts]
     if not a.no_speaker:

@@ -55,6 +55,19 @@ def dial_options(topic: str) -> list[str]:
     return [SKIP] + DIAL[topic]
 TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?)\b", "mood": r"\b(mood|feeling)\b",
             "stress": r"\bstress(ed|ful)?\b", "appetite": r"\b(appetite|eat(ing)?|ate|food|meals?|hungry)\b"}
+# Answer words the wearer might SAY, per topic -> level. Longest phrases first so "less than usual" isn't
+# read as "usual". Only for the live HUD; Gemini's summary at the end is what goes on the card.
+_SAID = {
+    "sleep": [("good", r"good|well|great"), ("fair", r"fair|okay|ok|alright|so-so"),
+              ("poor", r"poor|bad|badly|terrible|awful|barely")],
+    "mood": [("good", r"good|great|happy"), ("okay", r"okay|ok|fine|alright"), ("low", r"low|down|sad|bad")],
+    "stress": [("high", r"very stressed|high|a lot"), ("medium", r"medium|moderate"), ("low", r"low|calm|relaxed")],
+    "appetite": [("less_than_usual", r"less than usual|less|smaller"), ("more_than_usual", r"more than usual|more|hungrier"),
+                 ("normal", r"normal|usual")],
+}
+SAID_RE = {t: re.compile("|".join(f"(?P<{lvl}>\\b(?:{rx})\\b)" for lvl, rx in opts), re.I) for t, opts in _SAID.items()}
+NEGATED_RE = re.compile(r"\b(not|never|no)\s+(\w+\s+)?$|n't\s+(\w+\s+)?$", re.I)
+
 SHOW_RE = re.compile(r"\b(here'?s|here is|look(ing)? at|take a look|see this|this is my|show(ing)? you|"
                      r"my (lunch|dinner|breakfast|meal|plate|food|snack))\b", re.I)
 PEOPLE_RE = re.compile(r"\b(person|people|man|woman|men|women|face|faces|child|kid|boy|girl|someone|"
@@ -174,6 +187,30 @@ class Session:
     async def move_dial(self, delta: int):
         if self.dial_on:
             await self.set_index(max(0, min(len(EDGES), self.dial_index + delta)))
+
+    async def heard(self, text: str):
+        """The wearer's (redacted) words: if they give or change an answer by voice, show it on the HUD now.
+        "change my appetite to normal" updates appetite even after it was answered. Negated words
+        ("not good") are skipped rather than guessed."""
+        named = [(m.start(), t) for t, rx in TOPIC_RE.items() for m in re.finditer(rx, text, re.I)]
+        topic = max(named)[1] if named else self.topic
+        if topic not in SAID_RE:
+            return
+        level = None
+        for m in SAID_RE[topic].finditer(text):
+            if not NEGATED_RE.search(text[:m.start()]):
+                level = m.lastgroup                       # the last answer word wins: corrections come last
+        if level is None or self.levels.get(topic) == level:
+            return
+        self.levels[topic] = level
+        prov.log("transcript->hud", "answer level (one word)", "HUD on this Mac", topic=topic)
+        if topic == self.topic and self.dial_on:          # answered by voice: the dial isn't needed any more
+            self._cancel_dwell()
+            self.dial_on = self.dial_armed = False
+            await self.push_dial()
+        await self.push_state()
+        await self.hud.send({"type": "card", "id": topic, "title": topic, "body": level.replace("_", " "),
+                             "meta": "said by voice"}, sticky=False)
 
     async def double_tap(self):
         """Double-tap: confirm the dial if one is showing; otherwise 'nothing to add, move on'
@@ -361,6 +398,7 @@ class CameraAndCaptions(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame) and frame.text.strip():
             await self._s.hud.send({"type": "caption", "who": "you", "text": frame.text}, sticky=False)
+            await self._s.heard(frame.text)
             if SHOW_RE.search(frame.text):
                 await self._s.attach_frame("spoken")
         await self.push_frame(frame, direction)
@@ -519,10 +557,11 @@ async def main():
     from pipecat.turns.user_turn_strategies import StrategyMode, UserTurnStrategies, UserTurnStrategiesParams
     flick = FlickUserTurnStopStrategy()
     band_in.flick_strategy = flick
-    turns = UserTurnStrategies(stop=[flick, TurnAnalyzerUserTurnStopStrategy(
+    turns = UserTurnStrategies(start=nk.calm_turn_start(), stop=[flick, TurnAnalyzerUserTurnStopStrategy(
         turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
     aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
         vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns,
+        user_mute_strategies=[nk.MuteWhileBotSpeaks()],    # no self-interruptions from the speakers / room
         # Pipecat's default needs EVERY stop strategy to agree; we want whichever decides first (flick or silence).
         user_turn_strategies_params=UserTurnStrategiesParams(stop_mode=StrategyMode.FIRST)))
 
