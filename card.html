@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NeuroKind · Clinician card</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#f5f3ef; --card:#fff; --ink:#1d2330; --muted:#6b7280; --line:#e6e2da;
+          --low:#3f8f6b; --med:#c48a1d; --high:#c2463d; --na:#9aa1ab; --accent:#2f5d8a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+         background:var(--bg); color:var(--ink); }
+  .wrap { max-width:980px; margin:0 auto; padding:28px 20px 60px; }
+  header { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:18px; }
+  h1 { font-size:22px; margin:0; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:13px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.nd { background:#e8eef6; color:var(--accent); }
+  .pill.syn { background:#efe9fb; color:#6a4bb3; }
+  .banner { display:none; margin:0 0 16px; padding:12px 16px; border-radius:12px; background:#fdecea;
+            color:#8f2a22; border:1px solid #f4c4bf; font-weight:600; }
+  .banner.on { display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px 16px; }
+  .tile h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .lvl { display:flex; align-items:center; gap:8px; font-weight:700; font-size:17px; margin-bottom:6px; }
+  .dot { width:10px; height:10px; border-radius:50%; }
+  .reported { margin:0 0 8px; }
+  .quote { margin:0; color:var(--muted); font-style:italic; font-size:14px; }
+  .row { display:grid; grid-template-columns:1.3fr 1fr; gap:12px; margin-top:12px; }
+  @media (max-width:760px){ .row { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+  .panel h2 { font-size:13px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .hop { display:grid; grid-template-columns:70px 1fr; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:13px; }
+  .hop:first-of-type { border-top:0; }
+  .hop .t { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .hop b { font-weight:600; }
+  .tag { font-size:11px; padding:1px 7px; border-radius:6px; margin-left:6px; }
+  .tag.local { background:#e6f4ec; color:#2c6e50; } .tag.cloud { background:#fff2dc; color:#8a5a0b; }
+  .tag.block { background:#fdecea; color:#8f2a22; }
+  .empty { padding:40px; text-align:center; color:var(--muted); background:var(--card); border:1px dashed var(--line); border-radius:14px; }
+  .overview { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:12px; }
+  .overview h2, .tl h2 { font-size:13px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .ov-line { display:flex; gap:10px; align-items:flex-start; padding:5px 0; }
+  .ov-line .dot { margin-top:6px; flex:none; }
+  .ask { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .chip { padding:4px 11px; border-radius:999px; background:#fff2dc; color:#8a5a0b; font-weight:600; font-size:13px; text-transform:capitalize; }
+  .tl { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; overflow-x:auto; }
+  .tl table { border-collapse:collapse; width:100%; }
+  .tl th { font-weight:500; color:var(--muted); font-size:12px; padding:0 4px 6px; text-align:center; white-space:nowrap; }
+  .tl th.today { color:var(--ink); font-weight:700; }
+  .tl td { text-align:center; padding:5px 4px; }
+  .tl td.lab { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding-right:12px; }
+  .cell { display:inline-block; width:22px; height:22px; border-radius:7px; }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); margin-top:8px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  footer { margin-top:18px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Daily check-in</h1>
+      <div class="sub" id="meta">Waiting for a check-in…</div>
+    </div>
+    <div><span class="pill nd">Non-diagnostic</span> <span class="pill syn">Synthetic data</span></div>
+  </header>
+
+  <div class="banner" id="esc">⚠ Safety language in the wearer's own words: review now. (988 Lifeline was offered.)</div>
+  <div class="overview" id="ovbox" style="display:none"><h2 id="ovtitle">Overview</h2><div id="ov"></div>
+    <div class="ask" id="ask"></div>
+    <div class="sub" style="margin-top:8px">Patterns in what the wearer reported. Not a diagnosis.</div></div>
+  <div class="tl" id="tlbox" style="display:none"><h2>Check-in timeline</h2><div id="tl"></div>
+    <div class="legend"><span><i class="cell" style="width:12px;height:12px;background:var(--low)"></i>Good</span>
+      <span><i class="cell" style="width:12px;height:12px;background:var(--med)"></i>In between</span>
+      <span><i class="cell" style="width:12px;height:12px;background:var(--high)"></i>Worth asking about</span>
+      <span><i class="cell" style="width:12px;height:12px;background:#e7e5e0"></i>Not discussed</span></div></div>
+  <h2 style="font-size:13px;margin:6px 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Today's check-in</h2>
+  <div id="body"><div class="empty">No card yet. Run <code>python neurokind_bot.py 1</code> and finish a check-in.</div></div>
+
+  <div class="row">
+    <div class="panel"><h2>Where the data went</h2><div id="prov"><div class="sub">No hops logged yet.</div></div></div>
+    <div class="panel"><h2>Other notes</h2><div id="notes" class="sub">—</div>
+      <h2 style="margin-top:14px">Follow-up</h2><div id="fu" class="sub">—</div></div>
+  </div>
+  <footer>Reports only what the wearer said. Raw audio never stored. Refreshes every 3 s.</footer>
+</div>
+
+<script>
+const DOMAINS = ["sleep","mood","stress","appetite"];
+const SCALES = {sleep:["good","fair","poor"], mood:["good","okay","low"], stress:["low","medium","high"],
+                appetite:["normal","less_than_usual","more_than_usual"]};
+const TONE = (d, lv) => { const i = (SCALES[d]||[]).indexOf(lv);
+  if (i < 0) return "#c9c6bf"; if (d === "appetite") return i === 0 ? "var(--low)" : "var(--high)";
+  return ["var(--low)","var(--med)","var(--high)"][i]; };
+const LABEL = lv => lv === "not_discussed" ? "Not discussed" : String(lv||"").replace(/_/g," ").replace(/^./, c => c.toUpperCase());
+const COLORS = {safety:"var(--high)", followup:"var(--accent)"};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function renderCard(c) {
+  document.getElementById("meta").textContent = `Session ${c.session} · ${c.source || ""}`;
+  document.getElementById("esc").classList.toggle("on", !!c.escalate);
+  document.getElementById("body").innerHTML = '<div class="grid">' + DOMAINS.map(d => {
+    const v = c[d] || {}; const lvl = v.level || "not_discussed";
+    return `<div class="tile"><h3>${d}</h3>
+      <div class="lvl"><span class="dot" style="background:${TONE(d,lvl)}"></span>${esc(LABEL(lvl))}</div>
+      <p class="reported">${esc(v.reported) || "—"}</p>
+      ${v.quote ? `<p class="quote">“${esc(v.quote)}”</p>` : ""}</div>`;
+  }).join("") + "</div>";
+  document.getElementById("notes").textContent = c.other_notes || "—";
+  document.getElementById("fu").innerHTML = c.wearer_requested_followup
+    ? '<b style="color:var(--high)">Wearer asked for a clinician follow-up</b>' : "Not requested";
+}
+
+function renderProv(lines, session) {
+  const hops = lines.filter(h => !session || h.session === session);
+  if (!hops.length) return;
+  document.getElementById("prov").innerHTML = hops.map(h => {
+    const dest = h.dest || ""; const local = /Mac|local|device|cards\//i.test(dest);
+    const blocked = h.ok === false;
+    const tag = blocked ? '<span class="tag block">blocked</span>'
+              : `<span class="tag ${local ? "local" : "cloud"}">${local ? "on device" : "cloud"}</span>`;
+    const extra = h.redactions && h.redactions.length ? ` · redacted: ${h.redactions.join(", ")}` : "";
+    return `<div class="hop"><span class="t">${esc((h.t||"").slice(11))}</span>
+      <span><b>${esc(h.data)}</b> → ${esc(dest)}${tag}<br><span class="sub">${esc(h.hop)}${esc(extra)}</span></span></div>`;
+  }).join("");
+}
+
+function renderHistory(h) {
+  const ov = h.overview || {}; const tl = h.timeline || [];
+  if ((ov.lines||[]).length) {
+    document.getElementById("ovbox").style.display = "";
+    document.getElementById("ovtitle").textContent = `Overview · last ${ov.window} check-ins`;
+    document.getElementById("ov").innerHTML = ov.lines.map(l => {
+      const col = COLORS[l.domain] || ((ov.ask_about||[]).includes(l.domain) ? "var(--high)" : "var(--med)");
+      return `<div class="ov-line"><span class="dot" style="background:${col}"></span><span>${esc(l.text)}</span></div>`; }).join("");
+    document.getElementById("ask").innerHTML = (ov.ask_about||[]).length
+      ? '<b style="font-size:13px">Topics to ask about:</b> ' + ov.ask_about.map(d => `<span class="chip">${esc(d)}</span>`).join("")
+      : '<span class="sub">No repeated patterns to ask about.</span>';
+  }
+  if (tl.length) {
+    document.getElementById("tlbox").style.display = "";
+    const days = tl.map((c, i) => { const dt = new Date(c.created);
+      const today = i === tl.length - 1 && !c.synthetic_history;
+      return `<th class="${today ? "today" : ""}">${today ? "Today" : dt.toLocaleDateString(undefined,{weekday:"short", day:"numeric"})}</th>`; }).join("");
+    const rows = Object.keys(SCALES).map(d => `<tr><td class="lab">${d}</td>` + tl.map(c => {
+      const lv = c[d]; return `<td><span class="cell" title="${esc(LABEL(lv))}" style="background:${lv === "not_discussed" ? "#e7e5e0" : TONE(d, lv)}"></span></td>`; }).join("") + "</tr>").join("");
+    const fu = '<tr><td class="lab">follow-up</td>' + tl.map(c => `<td>${c.followup ? "●" : ""}</td>`).join("") + "</tr>";
+    document.getElementById("tl").innerHTML = `<table><tr><th></th>${days}</tr>${rows}${fu}</table>`;
+  }
+}
+
+async function tick() {
+  try {
+    const r = await fetch("cards/history.json?" + Date.now());
+    if (r.ok) renderHistory(await r.json());
+  } catch (e) {}
+  let session = null;
+  try {
+    const r = await fetch("cards/latest.json?" + Date.now());
+    if (r.ok) { const c = await r.json(); renderCard(c); session = c.session; }
+  } catch (e) {}
+  try {
+    const r = await fetch("provenance.jsonl?" + Date.now());
+    if (r.ok) {
+      const lines = (await r.text()).trim().split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      renderProv(lines, session || (lines.length ? lines[lines.length - 1].session : null));
+    }
+  } catch (e) {}
+}
+tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>
