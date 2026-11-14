@@ -75,7 +75,10 @@ If the image is not about the check-in, answer in one sentence and return to the
 
 Sometimes a message says the wearer chose an answer with a wrist tilt: treat it as their answer for that
 topic, acknowledge in a few words, and go on to the next topic. If they chose to skip a topic, say that's
-fine, don't ask about it again, and submit it as not_discussed with reported "Wearer chose to skip this topic"."""
+fine, don't ask about it again, and submit it as not_discussed with reported "Wearer chose to skip this topic".
+After a wrist-tilt answer, don't ask an open follow-up: the wearer may not use speech. Just go on.
+If a message says the wearer double-tapped to move on, they have nothing to add: go to the next step.
+When you ask "anything else?", add "or double-tap if that's all"."""
 
 
 # ------------------------------------------------------------------ shared check-in state
@@ -87,6 +90,7 @@ class Session:
         self.dwell = dwell                                # seconds to hold a tilt before it confirms (0 = off)
         self.dial_armed = False                           # dwell counts only after the wrist has moved once
         self._dwell_task = None
+        self._last_move_on = 0.0
         self.loop = None
         self.task = None
         self.context = None
@@ -171,6 +175,19 @@ class Session:
         if self.dial_on:
             await self.set_index(max(0, min(len(EDGES), self.dial_index + delta)))
 
+    async def double_tap(self):
+        """Double-tap: confirm the dial if one is showing; otherwise 'nothing to add, move on'
+        (answers an open question without speech)."""
+        if self.dial_on:
+            return await self.confirm_dial()
+        if not self.task or time.time() - self._last_move_on < 3:
+            return
+        self._last_move_on = time.time()
+        prov.log("wrist->llm", "double-tap: nothing to add", "Gemini (Google)")
+        await self.hud.send({"type": "gesture", "text": "✓ nothing to add"}, sticky=False)
+        self.context.add_message({"role": "user", "content": "(The wearer double-tapped to move on: nothing to add.)"})
+        await self.task.queue_frames([LLMRunFrame()])
+
     async def confirm_dial(self, how: str = "double-tap"):
         if not (self.dial_on and self.topic and self.task):
             return
@@ -229,7 +246,7 @@ class Session:
         elif kind == "dial_move":
             await self.move_dial(-1 if msg.get("delta", 0) < 0 else 1)
         elif kind == "confirm":
-            await self.confirm_dial()
+            await self.double_tap()
 
 
 # ------------------------------------------------------------------ wrist flick = "I'm done talking"
@@ -299,7 +316,7 @@ class HudBandInput(nk.VexoBandInput):
         if self._gestures:                                # the pretend band taps by itself: ignore it in --sim
             # No single-tap action: the band reports a wrist flick's sharp stop as a "tap", so tap = camera
             # fired on every flick in the first real run. Camera = voice ("here's my lunch") or the HUD's P key.
-            b.on("double-tap", lambda e: self._hop(self._s.confirm_dial()))
+            b.on("double-tap", lambda e: self._hop(self._s.double_tap()))
         b.configure(motion=25, events=True)               # low rate: motion shares the Bluetooth link with audio
         prov.log("band->mac", "wrist motion 25/s (tilt only)", "this Mac (Bluetooth)")
 
