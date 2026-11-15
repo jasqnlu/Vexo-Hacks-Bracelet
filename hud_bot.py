@@ -159,6 +159,8 @@ class Session:
         self.user_talking = False                         # wearer mid-sentence: the dial pauses (voice wins)
         self.bot_talking = False                          # Tend's audio is playing
         self.llm_busy = False                             # Gemini is writing a reply
+        self.reply_pending = False                        # a reply exists but Tend hasn't started saying it
+        self.has_speaker = True                           # --no-speaker: replies never "start", so don't track
         self.user_turns = 0                               # counts spoken turns (see run_llm)
         self._user_stopped_at = 0.0
         self.menu = None                                  # None = topic dial, "more" = the tell-me-more menu
@@ -243,6 +245,7 @@ class Session:
             self.bot_talking = on
             if on:
                 self.user_talking = False                 # muted while Tend talks: no turn can be open
+                self.reply_pending = False
             else:
                 self.llm_busy = False                     # safety net if an interrupted reply never "ended"
             return
@@ -321,6 +324,14 @@ class Session:
         """The wearer's (redacted) words: if they give or change an answer by voice, show it on the HUD now.
         "change my appetite to normal" updates appetite even after it was answered. Negated words
         ("not good") are skipped rather than guessed."""
+        if self.bot_talking:                              # the band mic hearing Tend's own voice: ignore it
+            return
+        if self.reply_pending and len(text.split()) >= 2 and self.interrupter:
+            # They kept talking after a pause, before Tend spoke: that reply is already stale. Drop it; the
+            # turn they're in now gets one reply that covers everything they said (no double answers).
+            self.reply_pending = False
+            logger.info("wearer still talking: dropping the not-yet-spoken reply")
+            await self.interrupter.broadcast_interruption()
         if self.menu == "more" and text.strip():         # they chose to just say it: the menu isn't needed
             self._close_more()
             await self.push_dial()
@@ -736,13 +747,17 @@ class BotCaptions(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMFullResponseStartFrame):
             self._s.llm_busy = True
+            self._s.reply_pending = self._s.has_speaker
         elif isinstance(frame, LLMTextFrame):
             self._buf.append(frame.text)
         if isinstance(frame, LLMFullResponseEndFrame):
             self._s.llm_busy = False
+        if isinstance(frame, LLMFullResponseEndFrame) and not self._buf:
+            self._s.reply_pending = False                 # tool call only: nothing to say
         if isinstance(frame, LLMFullResponseEndFrame) and self._buf:
             text, self._buf = "".join(self._buf).strip(), []
             if text:
+                logger.info(f"Tend reply: {text}")
                 await self._s.bot_said(text)
         await self.push_frame(frame, direction)
 
@@ -846,7 +861,10 @@ async def main():
 
     hud = HudServer(port=a.port)
     await hud.start()
+    (HERE / "logs").mkdir(exist_ok=True)                 # gitignored: one file per run, for debugging
+    logger.add(HERE / "logs" / f"hud_bot_{datetime.now():%H%M%S}.log", level="DEBUG")
     session = Session(hud, flip_dial=a.flip_dial, dwell=a.dwell)
+    session.has_speaker = not a.no_speaker
     session.still.still_secs = a.still_secs
     session.loop = asyncio.get_running_loop()
     hud.on_message = session.on_hud_message
