@@ -90,6 +90,27 @@ the greeting, follow-ups, "¿Hay algo más que quieras añadir?" and the goodbye
 the clinician; a `quote` keeps the wearer's exact Spanish words.""",
 }
 
+def streak_days(timeline: list, today=None, include_today: bool = True) -> int:
+    """Consecutive calendar days with a check-in, ending today. include_today=True counts the check-in that is
+    about to happen (so a first-ever check-in is day 1); False counts only what history already has."""
+    from datetime import date, timedelta
+    today = today or date.today()
+    days = {date.fromisoformat(t["created"][:10]) for t in timeline if t.get("created")}
+    if include_today:
+        days.add(today)
+    n, d = 0, today
+    while d in days:
+        n, d = n + 1, d - timedelta(days=1)
+    return n
+
+
+def load_timeline() -> list:
+    try:
+        return json.loads((HERE / "cards" / "history.json").read_text()).get("timeline", [])
+    except Exception:                                     # noqa: BLE001  no history yet
+        return []
+
+
 HUD_EXTRA = """
 
 This check-in also has a camera screen. Name each topic plainly when you ask about it (sleep, mood,
@@ -526,6 +547,10 @@ def make_submit(session: Session):
                                     "meta": meta, "kind": "camera" if v.get("shown") else "info"}, sticky=False)
         await session.push_dial()
         await session.push_state()
+        n = streak_days(load_timeline(), include_today=False)
+        if n >= 2:
+            await session.hud.send({"type": "card", "id": "streak", "title": "streak",
+                                    "body": f"🌱 Day {n} in a row", "meta": "daily check-ins, keep it up"}, sticky=False)
         if escalate:
             await session.avatar("concern", force=True)
             await session.hud.send({"type": "card", "id": "escalate", "title": "Flagged for care team",
@@ -642,7 +667,12 @@ async def main():
     prov.log("llm->tts", "agent reply text", "ElevenLabs (cloud)")
     await session.push_state()
 
-    context.add_message({"role": "user", "content": "(The wearer just started a check-in. Greet them briefly and ask how their day was.)"})
+    streak = streak_days(load_timeline())
+    kick = "(The wearer just started a check-in. Greet them briefly and ask how their day was."
+    if streak >= 2:                                       # a nudge to keep going, said once, at the very end
+        kick += (f" This is their check-in day {streak} in a row: when you say goodbye, thank them in one short"
+                 " sentence for keeping it up. Don't mention it earlier.")
+    context.add_message({"role": "user", "content": kick + ")"})
     await session.avatar("thinking")
     await task.queue_frames([LLMRunFrame()])
 
