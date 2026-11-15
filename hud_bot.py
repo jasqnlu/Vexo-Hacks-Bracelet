@@ -55,8 +55,10 @@ HYST = 4.0                                      # cross an edge by this much to 
 
 def dial_options(topic: str) -> list[str]:
     return [SKIP] + DIAL[topic]
-TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?)\b", "mood": r"\b(mood|feeling)\b",
-            "stress": r"\bstress(ed|ful)?\b", "appetite": r"\b(appetite|eat(ing)?|ate|food|meals?|hungry)\b"}
+TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?|dormi\w*|duerm\w*|sueño|descans\w*)\b",
+            "mood": r"\b(mood|feeling|ánimo|animo|sientes|humor)\b",
+            "stress": r"\b(stress(ed|ful)?|estr[eé]s\w*)\b",
+            "appetite": r"\b(appetite|eat(ing)?|ate|food|meals?|hungry|apetito|comer|comido|comida)\b"}
 # Answer words the wearer might SAY, per topic -> level. Longest phrases first so "less than usual" isn't
 # read as "usual". Only for the live HUD; Gemini's summary at the end is what goes on the card.
 _SAID = {
@@ -76,6 +78,17 @@ PEOPLE_RE = re.compile(r"\b(person|people|man|woman|men|women|face|faces|child|k
                        r"he|she|his|her|they look)\b", re.I)
 IMAGE_NOTE = ("(Camera frame: the wearer is showing you this right now. Describe only the objects you can see, "
               "in a few neutral words. Never describe people or faces. Never guess about health from it.)")
+
+LANG_EXTRA = {
+    "en": "",
+    "es": """
+
+LANGUAGE: the wearer chose Spanish. Speak ONLY natural, warm Spanish with them (use "tú"), every turn, including
+the greeting, follow-ups, "¿Hay algo más que quieras añadir?" and the goodbye. Name the topics plainly in Spanish
+(sueño, ánimo, estrés, apetito) so the screen can follow. For self-harm, say they can call or text 988 any time
+(it has Spanish support). BUT write every submit_summary text field (reported, other_notes, shown) in ENGLISH for
+the clinician; a `quote` keeps the wearer's exact Spanish words.""",
+}
 
 HUD_EXTRA = """
 
@@ -107,6 +120,8 @@ class Session:
         self._dwell_task = None
         self._last_move_on = 0.0
         self._avatar = None
+        self.lang = "en"
+        self.lang_chosen: asyncio.Future = asyncio.get_event_loop().create_future()
         self.loop = None
         self.task = None
         self.context = None
@@ -291,7 +306,11 @@ class Session:
 
     async def on_hud_message(self, msg: dict):
         kind = msg.get("type")
-        if kind == "show":
+        if kind == "begin":
+            lang = msg.get("lang")
+            if lang in LANG_EXTRA and not self.lang_chosen.done():
+                self.lang_chosen.set_result(lang)
+        elif kind == "show":
             await self.show_now("HUD key")
         elif kind == "dial_move":
             await self.move_dial(-1 if msg.get("delta", 0) < 0 else 1)
@@ -529,6 +548,8 @@ async def main():
     ap.add_argument("--flip-dial", action="store_true", help="if tilting right moves the dial left")
     ap.add_argument("--dwell", type=float, default=1.2,
                     help="seconds to hold a tilt before it confirms (0 = double-tap / Enter only)")
+    ap.add_argument("--lang", choices=["ask", "en", "es"], default="ask",
+                    help="check-in language; 'ask' = pick it on the HUD start screen (nothing speaks until then)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--turn-silence", type=float, default=1.5,
                     help="max seconds of silence before the bot answers (Pipecat default 3)")
@@ -544,6 +565,14 @@ async def main():
     session.loop = asyncio.get_running_loop()
     hud.on_message = session.on_hud_message
 
+    if a.lang == "ask":
+        logger.info(f"Open http://localhost:{a.port} and pick a language: nothing starts until you do.")
+        await hud.send({"type": "await_lang"})
+        session.lang = await session.lang_chosen
+    else:
+        session.lang = a.lang
+    logger.info(f"Language: {session.lang}")
+
     band_in = HudBandInput(session, a.number, sim=a.sim, replay=a.replay, gestures=not a.sim, flick_dps=a.flick_dps)
 
     if a.stt == "deepgram":
@@ -551,7 +580,9 @@ async def main():
         stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"], sample_rate=SAMPLE_RATE,
                                  settings=DeepgramSTTService.Settings(
                                      redact=["pci", "ssn", "numbers"], smart_format=True,
-                                     keyterm=["appetite", "insomnia", "anxious", "stressed"]))
+                                     language=session.lang,
+                                     keyterm=(["appetite", "insomnia", "anxious", "stressed"]
+                                              if session.lang == "en" else ["apetito", "estrés", "ansiedad"])))
         stt_dest = "Deepgram (cloud, redact=pci/ssn/numbers)"
         prov.log("mac->deepgram", "raw audio stream", "Deepgram (cloud)", note="cloud mode")
     else:
@@ -579,7 +610,7 @@ async def main():
     tool = FunctionSchema(name="submit_summary",
                           description="Submit the structured, non-diagnostic check-in summary for the clinician card.",
                           properties=p["properties"], required=p["required"])
-    context = LLMContext(messages=[{"role": "system", "content": nk.SYSTEM + HUD_EXTRA}],
+    context = LLMContext(messages=[{"role": "system", "content": nk.SYSTEM + HUD_EXTRA + LANG_EXTRA[session.lang]}],
                          tools=ToolsSchema(standard_tools=[tool]))
     session.context = context
     # Smart Turn (local model) decides when the wearer is done. If it thinks they're mid-sentence it waits for

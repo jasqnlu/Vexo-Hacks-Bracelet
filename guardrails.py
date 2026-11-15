@@ -14,12 +14,13 @@ _PATTERNS = [
     ("ADDRESS", r"\b\d{1,5}\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Way|Court|Ct)\b\.?"),
     ("DATE", r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b"),
     ("DATE", r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"),
-    ("NAME", r"\b(?:[Mm]y name is|I'm|I am|[Cc]all me|[Mm]y (?:wife|husband|son|daughter|mom|dad|mother|father|sister|brother|friend|partner|boss|doctor))\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)"),
+    ("NAME", r"\b(?:[Mm]y name is|I'm|I am|[Cc]all me|[Mm]y (?:wife|husband|son|daughter|mom|dad|mother|father|sister|brother|friend|partner|boss|doctor)|[Mm]e llamo|[Ss]oy|[Mm]i (?:esposa|esposo|hijo|hija|mamá|papá|madre|padre|hermana|hermano|amiga|amigo|pareja|jefe|jefa|novia|novio|doctora?))\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñü]+(?:\s[A-ZÁÉÍÓÚÑ][a-záéíóúñü]+)?)"),
 ]
 # Names you know will appear in the synthetic demo script (add to this list).
 KNOWN_NAMES = ["Alyshah", "Jason", "Maya", "Daniel", "Priya", "Sam"]
 # "I'm tired" must not become "I'm [NAME]": the NAME rule only fires on a capitalised word that isn't a feeling.
-_NOT_NAMES = {"Tired", "Fine", "Okay", "Good", "Bad", "Stressed", "Anxious", "Sad", "Happy", "Not", "Feeling", "Really", "So", "Just", "Sleeping"}
+_NOT_NAMES = {"Tired", "Fine", "Okay", "Good", "Bad", "Stressed", "Anxious", "Sad", "Happy", "Not", "Feeling", "Really", "So", "Just", "Sleeping",
+              "Bien", "Mal", "Feliz", "Triste", "Cansado", "Cansada", "Muy", "Un", "Una", "No", "Estresado", "Estresada"}
 
 
 def redact(text: str):

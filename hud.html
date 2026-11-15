@@ -94,6 +94,11 @@
   .start { position: fixed; inset: 0; display: grid; place-items: center; background: #05070b; z-index: 9; }
   .start button { font: inherit; font-size: 16px; padding: 14px 22px; border-radius: 12px; border: 1px solid var(--line);
     background: rgba(143,211,255,.16); color: var(--ink); cursor: pointer; }
+  .pick-title { font-size: 34px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
+  .pick-sub { color: var(--dim); margin: 6px 0 18px; font-size: 15px; }
+  .pick-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .start button.lang { min-width: 150px; font-size: 18px; }
+  .start button.lang:hover, .start button.lang:focus-visible { border-color: var(--accent); }
   .start p { color: var(--dim); margin-top: 12px; font-size: 13px; text-align: center; }
 
   /* Sprout: Tend's character (bottom-left, between the rail and the wrist meter) */
@@ -239,8 +244,13 @@
 
 <div class="start" id="start">
   <div style="text-align:center">
-    <button id="go">Start camera HUD</button>
-    <p>Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
+    <div class="pick-title">Tend</div>
+    <div class="pick-sub">Choose your language · Elige tu idioma</div>
+    <div class="pick-row">
+      <button class="lang" data-lang="en">English</button>
+      <button class="lang" data-lang="es">Español</button>
+    </div>
+    <p>Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
   </div>
 </div>
 
@@ -270,10 +280,16 @@ async function startCamera(deviceId) {
   video.classList.toggle("mirror", !/iphone|continuity|back/.test(label));   // a phone camera points away: no mirror
 }
 $("camSel").onchange = e => startCamera(e.target.value);
-$("go").onclick = async () => {
-  try { await startCamera(); $("start").remove(); }
-  catch (e) { $("start").querySelector("p").textContent = "Camera blocked: " + e.message; }
-};
+// Language first: the bot builds its voice pipeline only after this choice, so nothing talks "off the rip".
+let chosenLang = null;
+function sendBegin() { if (chosenLang && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "begin", lang: chosenLang })); }
+document.querySelectorAll("button.lang").forEach(b => b.onclick = async () => {
+  chosenLang = b.dataset.lang;
+  sendBegin();                                  // (re)sent on every reconnect too, see connect()
+  try { await startCamera(); }
+  catch (e) { console.warn("camera blocked: " + e.message); }   // the check-in works without the camera
+  $("start").remove();
+});
 
 // one small JPEG about every second; the server keeps only the newest, in memory
 const canvas = document.createElement("canvas");
@@ -289,7 +305,7 @@ setInterval(() => {
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
-  ws.onopen = () => { $("conn").classList.add("ok"); $("connTxt").textContent = "bot linked"; };
+  ws.onopen = () => { $("conn").classList.add("ok"); $("connTxt").textContent = "bot linked"; sendBegin(); };
   ws.onclose = () => { $("conn").classList.remove("ok"); $("connTxt").textContent = "bot offline"; setTimeout(connect, 1500); };
   ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (err) { console.warn(err); } };
 }
