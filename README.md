@@ -1,7 +1,7 @@
 # Tend 🌱
 ### Two minutes a day, out loud. A daily talk with a warm voice on your wrist, and a clear note for the people who care for you.
 
-*By NeuroKind · built at VexoHacks (Vexo × Y Combinator, Nov 14 2026)*
+*By Jason · built at VexoHacks (Vexo × Y Combinator, Nov 14 2026)*
 
 ![Tend start screen with Sprout](docs/images/hud-start.png)
 
