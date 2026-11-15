@@ -54,6 +54,22 @@
   .cell { display:inline-block; width:22px; height:22px; border-radius:7px; }
   .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); margin-top:8px; }
   .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .btn { font:inherit; font-size:13px; font-weight:600; color:var(--accent); background:var(--card);
+         border:1px solid var(--line); border-radius:999px; padding:5px 13px; cursor:pointer;
+         min-width:9.5em; transition:background .15s, border-color .15s, color .15s; }
+  .btn:hover:not(:disabled) { background:#e8eef6; border-color:#c9d6e6; }
+  .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .btn:disabled { color:var(--na); cursor:default; }
+  .btn.ok { color:var(--low); border-color:#bfe0cf; background:#e6f4ec; }
+  .btn.err { color:#8f2a22; border-color:#f4c4bf; background:#fdecea; }
+  .btn.busy { color:var(--muted); cursor:progress; }
+  .btn.playing { color:#fff; background:var(--accent); border-color:var(--accent); }
+  .hd-right { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+  .ov-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:10px; }
+  .ov-head h2 { margin:0 !important; padding-top:6px; }
+  .recap { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+  .recap .sub { font-size:11px; }
+  .recap .msg { color:#8f2a22; font-size:12px; max-width:320px; text-align:right; }
   footer { margin-top:18px; color:var(--muted); font-size:12px; }
 </style>
 </head>
@@ -64,11 +80,18 @@
       <h1>Daily check-in</h1>
       <div class="sub" id="meta">Waiting for a check-in…</div>
     </div>
-    <div><span class="pill nd">Non-diagnostic</span> <span class="pill syn">Synthetic data</span></div>
+    <div class="hd-right">
+      <div><span class="pill nd">Non-diagnostic</span> <span class="pill syn">Synthetic data</span></div>
+      <button class="btn" id="exportBtn" type="button" disabled title="Download today's check-in as a FHIR R4 QuestionnaireResponse">Export to health record</button>
+    </div>
   </header>
 
   <div class="banner" id="esc">⚠ Safety language in the wearer's own words: review now. (988 Lifeline was offered.)</div>
-  <div class="overview" id="ovbox" style="display:none"><h2 id="ovtitle">Overview</h2><div id="ov"></div>
+  <div class="overview" id="ovbox" style="display:none">
+    <div class="ov-head"><h2 id="ovtitle">Overview</h2>
+      <div class="recap"><button class="btn" id="recapBtn" type="button">▶ Weekly recap</button>
+        <span class="sub" id="recapCap">read aloud by Tend's voice</span></div></div>
+    <div id="ov"></div>
     <div class="ask" id="ask"></div>
     <div class="sub" style="margin-top:8px">Patterns in what the wearer reported. Not a diagnosis.</div></div>
   <div class="tl" id="tlbox" style="display:none"><h2>Check-in timeline</h2><div id="tl"></div>
@@ -160,7 +183,7 @@ async function tick() {
   let session = null;
   try {
     const r = await fetch("cards/latest.json?" + Date.now());
-    if (r.ok) { const c = await r.json(); renderCard(c); session = c.session; }
+    if (r.ok) { const c = await r.json(); renderCard(c); session = c.session; currentCard = c; exportBtn.disabled = false; }
   } catch (e) {}
   try {
     const r = await fetch("provenance.jsonl?" + Date.now());
@@ -170,6 +193,107 @@ async function tick() {
     }
   } catch (e) {}
 }
+// ---- Export to health record (FHIR R4, client-side) ----
+let currentCard = null;
+const FHIR_SYS = "https://tend.example/CodeSystem/checkin-level";
+const TAG_SYS = "https://tend.example/CodeSystem/tend-tags";
+function buildFhirBundle(c) {
+  const topicItem = d => {
+    const v = c[d] || {}; const lvl = v.level || "not_discussed";
+    const answer = [{ valueCoding: { system: FHIR_SYS, code: lvl, display: lvl.replace(/_/g, " ") } }];
+    if (v.reported) answer.push({ valueString: v.reported });
+    if (v.quote) answer.push({ valueString: `Wearer's words: "${v.quote}"` });
+    return { linkId: d, text: d, answer };
+  };
+  const tags = [
+    { system: TAG_SYS, code: "synthetic-demo-data", display: "Synthetic demo data, not a real person" },
+    { system: TAG_SYS, code: "non-diagnostic", display: "Self-reported by the wearer; not a clinical assessment" },
+  ];
+  if (c.escalate) tags.push({ system: TAG_SYS, code: "care-team-followup", display: "Flagged for care-team follow-up" });
+  if (c.wearer_requested_followup) tags.push({ system: TAG_SYS, code: "wearer-requested-followup", display: "Wearer asked for a clinician follow-up" });
+  const qr = {
+    resourceType: "QuestionnaireResponse",
+    id: `tend-${c.session}`,
+    meta: { tag: tags },
+    identifier: { system: "https://tend.example/session", value: String(c.session) },
+    questionnaire: "https://tend.example/Questionnaire/daily-checkin",
+    status: "completed",
+    subject: { display: "Synthetic demo wearer" },
+    authored: c.created,
+    source: { display: "Wearer (self-reported by voice check-in)" },
+    item: [
+      ...DOMAINS.map(topicItem),
+      { linkId: "other_notes", text: "other notes", answer: c.other_notes ? [{ valueString: c.other_notes }] : undefined },
+      { linkId: "wearer_requested_followup", text: "wearer requested follow-up", answer: [{ valueBoolean: !!c.wearer_requested_followup }] },
+    ].map(i => (i.answer ? i : { linkId: i.linkId, text: i.text })),
+  };
+  if (c.escalate) qr.extension = [{ url: "https://tend.example/StructureDefinition/care-team-followup", valueBoolean: true }];
+  return {
+    resourceType: "Bundle",
+    type: "collection",
+    timestamp: new Date().toISOString(),
+    meta: { tag: tags.slice(0, 2) },
+    entry: [{ fullUrl: `urn:uuid:tend-${c.session}`, resource: qr }],
+  };
+}
+const exportBtn = document.getElementById("exportBtn");
+exportBtn.addEventListener("click", () => {
+  if (!currentCard) return;
+  const blob = new Blob([JSON.stringify(buildFhirBundle(currentCard), null, 2)], { type: "application/fhir+json" });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: `tend-checkin-${currentCard.session}.fhir.json` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  exportBtn.textContent = "Exported ✓"; exportBtn.classList.add("ok");
+  clearTimeout(exportBtn._t);
+  exportBtn._t = setTimeout(() => { exportBtn.textContent = "Export to health record"; exportBtn.classList.remove("ok"); }, 2000);
+});
+
+// ---- Weekly recap (audio from hud_server /recap.mp3) ----
+const recapBtn = document.getElementById("recapBtn"), recapCap = document.getElementById("recapCap");
+let recapAudio = null, recapUrl = null, recapState = "idle";
+function setRecap(state, msg) {
+  recapState = state;
+  recapBtn.classList.remove("busy", "playing", "err");
+  recapCap.className = "sub"; recapCap.textContent = "read aloud by Tend's voice";
+  if (state === "idle") recapBtn.textContent = "▶ Weekly recap";
+  if (state === "loading") { recapBtn.textContent = "Preparing…"; recapBtn.classList.add("busy"); }
+  if (state === "playing") { recapBtn.textContent = "■ Stop"; recapBtn.classList.add("playing"); }
+  if (state === "error") {
+    recapBtn.textContent = "Recap unavailable"; recapBtn.classList.add("err");
+    recapCap.className = "msg"; recapCap.textContent = msg;
+    clearTimeout(recapBtn._t); recapBtn._t = setTimeout(() => setRecap("idle"), 4000);
+  }
+}
+function stopRecap() {
+  if (recapAudio) { recapAudio.pause(); recapAudio.src = ""; recapAudio = null; }
+  if (recapUrl) { URL.revokeObjectURL(recapUrl); recapUrl = null; }
+}
+recapBtn.addEventListener("click", async () => {
+  if (recapState === "loading") return;
+  if (recapState === "playing") { stopRecap(); setRecap("idle"); return; }
+  setRecap("loading");
+  try {
+    const r = await fetch("recap.mp3?" + Date.now());
+    if (!r.ok) {
+      let msg = r.status === 404 ? "Recap needs the HUD server." : `Recap failed (HTTP ${r.status}).`;
+      try { const j = await r.json(); if (j && j.error && r.status !== 404) msg = String(j.error).slice(0, 90); } catch (e) {}
+      return setRecap("error", msg);
+    }
+    const blob = await r.blob();
+    if (recapState !== "loading") return;
+    stopRecap();
+    recapUrl = URL.createObjectURL(blob);
+    recapAudio = new Audio(recapUrl);
+    recapAudio.onended = () => { stopRecap(); setRecap("idle"); };
+    recapAudio.onerror = () => { stopRecap(); setRecap("error", "The recap audio could not be played."); };
+    await recapAudio.play();
+    setRecap("playing");
+  } catch (e) {
+    stopRecap(); setRecap("error", "Can't reach the recap. Is the HUD server running?");
+  }
+});
+
 tick(); setInterval(tick, 3000);
 </script>
 </body>
