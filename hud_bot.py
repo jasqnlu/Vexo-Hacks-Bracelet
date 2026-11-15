@@ -62,6 +62,10 @@ def dial_options(topic: str) -> list[str]:
 # "Tell me more?" after a tilt answer that's worth asking about (poor sleep, low mood, ...).
 # Tilt left = say it, right = type it; the resting middle (or a double-tap) = no thanks.
 MORE = ["say_it", "no_thanks", "type_it"]
+# "I'd rather type it" (any time): open the HUD's text box.
+TYPE_RE = re.compile(r"\b(?:(?:i'?d|i would|i'?ll|i will|i want to|i wanna|let me|can i|could i|may i)\s+(?:rather\s+|prefer\s+(?:to\s+)?|just\s+)?type"
+                     r"|prefer(?:s)?\s+(?:to\s+)?typ(?:e|ing)|rather\s+type|type\s+it(?:\s+out)?|typing\s+(?:it|instead)"
+                     r"|prefiero\s+escribir|quiero\s+escribir(?:lo)?|(?:puedo|déjame|dejame)\s+escribir(?:lo)?)\b", re.I)
 MORE_REST = 1
 MORE_EDGES = (-14.0, 14.0)
 MORE_TIMEOUT = 10.0                             # nothing chosen and nothing typed: carry on as "no thanks"
@@ -146,6 +150,9 @@ like speech (it can be quoted on the card). After they say or type more about a 
 one short sentence, then go to the next topic.
 Keep every reply short: at most two sentences, ending with exactly ONE question. Never ask about two
 topics in one reply; wait for the answer first.
+If the wearer says they'd rather type, reply only "Sure, type it below." and wait: their typed words arrive
+as a message. Never ask the same question twice in different words: if you already asked it, wait for the
+answer (or a tilt / typed answer) instead of rephrasing.
 Never say or write that the wearer said something they didn't. Only reflect back what is actually in their
 messages; if you didn't catch an answer, ask again briefly. Card quotes must be their exact words.
 If a message says the wearer double-tapped to move on, they have nothing to add: go to the next step.
@@ -260,6 +267,12 @@ class Session:
         if on:
             self.user_turns += 1
             self._cancel_dwell()
+            if self.reply_pending and not self.bot_talking and self.interrupter:
+                # They started talking again before Tend's reply played: that reply is stale. Drop it; this
+                # new turn gets one reply covering everything (no "same question twice").
+                self.reply_pending = False
+                logger.info("wearer still talking: dropping the not-yet-spoken reply")
+                await self.interrupter.broadcast_interruption()
         else:
             self._user_stopped_at = time.time()
         if self.dial_on:
@@ -335,6 +348,20 @@ class Session:
             return
         if text.strip():
             self.said.append(text.strip())
+        if TYPE_RE.search(text) and not self.typing:     # "I'd rather type": open the text box now
+            topic = (self.more_for or (self.topic, None))[0] if self.menu == "more" else self.topic
+            if self.menu == "more" and self.dial_on:
+                await self.hud.send({"type": "dial", "active": False, "topic": topic,
+                                     "chosen": MORE.index("type_it")}, sticky=False)
+            self._close_more()
+            self._cancel_dwell()
+            self.dial_on = self.dial_armed = False
+            self.typing = True
+            prov.log("transcript->hud", "asked to type (no content)", "HUD on this Mac", topic=topic)
+            await self.hud.send({"type": "typebox", "open": True, "topic": topic,
+                                 "prompt": f"Type about your {topic}" if topic else "Type it here"}, sticky=False)
+            await self.push_dial()
+            return
         if self.reply_pending and len(text.split()) >= 2 and self.interrupter:
             # They kept talking after a pause, before Tend spoke: that reply is already stale. Drop it; the
             # turn they're in now gets one reply that covers everything they said (no double answers).
@@ -797,6 +824,10 @@ class BotCaptions(FrameProcessor):
         if isinstance(frame, LLMFullResponseStartFrame):
             self._s.llm_busy = True
             self._s.reply_pending = self._s.has_speaker
+            if self._s.user_talking and self._s.has_speaker and self._s.interrupter:
+                self._s.reply_pending = False             # they're talking right now: answer after this turn
+                logger.info("wearer still talking: dropping the not-yet-spoken reply")
+                asyncio.create_task(self._s.interrupter.broadcast_interruption())
         elif isinstance(frame, LLMTextFrame):
             self._buf.append(frame.text)
         if isinstance(frame, LLMFullResponseEndFrame):
