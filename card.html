@@ -28,6 +28,9 @@
          background-attachment:fixed; -webkit-font-smoothing:antialiased; }
   .wrap { max-width:1320px; margin:0 auto; padding:30px 40px 56px; }
   .sub { color:var(--muted); font-size:14px; }
+  .mv { margin-top:14px; padding:6px 12px; border-radius:999px; background:var(--sage-1); color:var(--ink-2);
+        font-size:13px; display:inline-block; }
+  .mv[hidden] { display:none; }
   code { font-size:.92em; background:var(--hair); padding:1px 6px; border-radius:6px; }
 
   /* ---------- header ---------- */
@@ -271,7 +274,8 @@
   <div class="row">
     <section class="card"><h2>Where the data went</h2><div class="hops" id="prov"><div class="sub">No hops logged yet.</div></div></section>
     <section class="card notes"><h2>Other notes</h2><div id="notes" class="sub">—</div>
-      <h2 class="second">Follow-up</h2><div id="fu" class="sub">—</div></section>
+      <h2 class="second">Follow-up</h2><div id="fu" class="sub">—</div>
+      <div id="mv" class="mv" hidden></div></section>
   </div>
   <footer>Reports only what the wearer said. Raw audio never stored. Refreshes every 3 s.</footer>
 </div>
@@ -314,6 +318,12 @@ function renderCard(c) {
   document.getElementById("notes").textContent = c.other_notes || "—";
   document.getElementById("fu").innerHTML = c.wearer_requested_followup
     ? '<span class="fu-yes">Wearer asked for a clinician follow-up</span>' : "Not requested";
+  const mv = c.movement, mvEl = document.getElementById("mv");        // device-measured, not what the wearer said
+  mvEl.hidden = !mv;
+  if (mv) {
+    const n = +mv.still_nudges || 0, k = +mv.stretches || 0;
+    mvEl.textContent = `Measured by the band: ${n} stretch reminder${n === 1 ? "" : "s"}, ${k} stretch${k === 1 ? "" : "es"}`;
+  }
 }
 
 function renderProv(lines, session) {

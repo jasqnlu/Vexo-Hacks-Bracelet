@@ -7,7 +7,7 @@ Same check-in as neurokind_bot.py (which stays unchanged as the fallback demo), 
   - hud.html shows the camera, the topic list, captions, a wrist-tilt dial and answer cards
   - showing something attaches ONE camera frame to Gemini: say "here's my lunch" / "look at this",
     or press P on the HUD (no band tap: a flick reads as a tap). Frames live only in memory; nothing is saved.
-  - the dial: tilt the wrist to pick an answer, HOLD it there --dwell 1.2 s to confirm (a bar fills);
+  - the dial: tilt the wrist to pick an answer, HOLD it there --dwell 2 s to confirm (a bar fills);
     double-tap (or Enter on the HUD) confirms at once
   - the card gets an optional `shown` line per topic (objects only, never people), safety-gated
 HUD keys: P show camera · ← → move the dial · Enter confirm · M mirror · C captions.
@@ -25,6 +25,7 @@ from datetime import datetime
 import neurokind_bot as nk                     # reuses band input, redaction, prompt, provenance, logging
 import guardrails
 from hud_server import HudServer
+from stillness import StillnessWatcher
 from neurokind_bot import HERE, KIT, SAMPLE_RATE, logger, prov
 
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
@@ -55,6 +56,14 @@ HYST = 4.0                                      # cross an edge by this much to 
 
 def dial_options(topic: str) -> list[str]:
     return [SKIP] + DIAL[topic]
+
+
+# "Tell me more?" after a tilt answer that's worth asking about (poor sleep, low mood, ...).
+# Tilt left = say it, right = type it; the resting middle (or a double-tap) = no thanks.
+MORE = ["say_it", "no_thanks", "type_it"]
+MORE_REST = 1
+MORE_EDGES = (-14.0, 14.0)
+MORE_TIMEOUT = 15.0                             # nothing chosen and nothing typed: carry on as "no thanks"
 TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?|dormi\w*|duerm\w*|sueño|descans\w*)\b",
             "mood": r"\b(mood|feeling|ánimo|animo|sientes|humor)\b",
             "stress": r"\b(stress(ed|ful)?|estr[eé]s\w*)\b",
@@ -129,7 +138,11 @@ If the image is not about the check-in, answer in one sentence and return to the
 Sometimes a message says the wearer chose an answer with a wrist tilt: treat it as their answer for that
 topic, acknowledge in a few words, and go on to the next topic. If they chose to skip a topic, say that's
 fine, don't ask about it again, and submit it as not_discussed with reported "Wearer chose to skip this topic".
-After a wrist-tilt answer, don't ask an open follow-up: the wearer may not use speech. Just go on.
+After a wrist-tilt answer, don't ask an open follow-up: the wearer may not use speech. The screen offers
+them "tell me more" (say it or type it) on its own; a message will tell you what they chose.
+A message starting "(Typed by the wearer" is the wearer's own words, typed instead of spoken: treat it exactly
+like speech (it can be quoted on the card). After they say or type more about a topic, acknowledge it warmly in
+one short sentence, then go to the next topic.
 If a message says the wearer double-tapped to move on, they have nothing to add: go to the next step.
 When you ask "anything else?", add "or double-tap if that's all"."""
 
@@ -138,11 +151,15 @@ When you ask "anything else?", add "or double-tap if that's all"."""
 class Session:
     """What the HUD shows. Touched from the event loop; band callbacks hop onto it via the loop."""
 
-    def __init__(self, hud: HudServer, flip_dial=False, dwell=1.2):
+    def __init__(self, hud: HudServer, flip_dial=False, dwell=2.0):
         self.hud, self.flip = hud, flip_dial
         self.dwell = dwell                                # seconds to hold a tilt before it confirms (0 = off)
         self.dial_armed = False                           # dwell counts only after the wrist has moved once
         self._dwell_task = None
+        self.menu = None                                  # None = topic dial, "more" = the tell-me-more menu
+        self.more_for = None                              # (topic, level) the menu is about
+        self.typing = False                               # the HUD's text box is open
+        self._more_timer = None
         self._last_move_on = 0.0
         self._avatar = None
         self.interrupter = None                           # the band input processor (start of the pipeline)
@@ -160,6 +177,9 @@ class Session:
         self.last_attach = 0.0
         self.last_roll = 0.0
         self.roll_zero = None                             # set when a dial appears (see on_roll)
+        self.checkin_done = False                         # card saved: from now on the stillness watcher runs
+        self.still = StillnessWatcher(still_secs=15.0)   # main() sets still_secs from --still-secs
+        self._stretch_hold = None                         # keeps Sprout in "stretch" after the spoken line
 
     async def avatar(self, state: str, force: bool = False):
         """Sprout's state on the HUD: idle | listening | thinking | speaking | concern (concern is final)."""
@@ -172,12 +192,17 @@ class Session:
         await self.hud.send({"type": "state", "topic": self.topic, "listening": listening,
                              "topics": {t: self.levels.get(t) for t in TOPICS}, "shown": self.shown})
 
+    def options(self) -> list[str]:
+        return MORE if self.menu == "more" else dial_options(self.topic)
+
     async def push_dial(self):
         if self.topic:
+            q = (f"Tell me more about your {self.topic}?" if self.menu == "more"
+                 else f"{self.topic.capitalize()}: tilt to choose")
             await self.hud.send({"type": "dial", "active": self.dial_on, "topic": self.topic,
-                                 "options": dial_options(self.topic), "index": self.dial_index,
+                                 "options": self.options(), "index": self.dial_index, "menu": self.menu,
                                  "dwell": self.dwell if (self.dial_armed and self.dial_on) else 0,
-                                 "question": f"{self.topic.capitalize()}: tilt to choose"})
+                                 "question": q})
 
     async def bot_said(self, text: str):
         """Follow the conversation: the last topic the bot names is the one it is asking about."""
@@ -189,6 +214,9 @@ class Session:
         if new != self.topic and new not in self.levels:
             if self.topic and self.topic not in self.levels:
                 self.levels[self.topic] = "said"          # answered by voice; the level arrives with the summary
+            if self.typing:
+                await self.hud.send({"type": "typebox", "open": False}, sticky=False)
+            self._close_more()
             self.topic, self.dial_index, self.dial_on = new, REST, True
             self.roll_zero = None                         # re-centre on the wrist's next reading
             self.dial_armed = False                       # resting wrist = middle, so don't start a hold yet
@@ -214,7 +242,8 @@ class Session:
         so hand shake near an edge doesn't flip between options (and restart the hold).
         Answers: in at ±18°, out at ±10°. Skip: in past -40°, out at -32°."""
         c = self.dial_index
-        return sum(r > (e + HYST if c <= k else e - HYST) for k, e in enumerate(EDGES))
+        edges = MORE_EDGES if self.menu == "more" else EDGES
+        return sum(r > (e + HYST if c <= k else e - HYST) for k, e in enumerate(edges))
 
     async def set_index(self, idx: int):
         if not self.dial_on or idx == self.dial_index:
@@ -238,12 +267,15 @@ class Session:
 
     async def move_dial(self, delta: int):
         if self.dial_on:
-            await self.set_index(max(0, min(len(EDGES), self.dial_index + delta)))
+            await self.set_index(max(0, min(len(self.options()) - 1, self.dial_index + delta)))
 
     async def heard(self, text: str):
         """The wearer's (redacted) words: if they give or change an answer by voice, show it on the HUD now.
         "change my appetite to normal" updates appetite even after it was answered. Negated words
         ("not good") are skipped rather than guessed."""
+        if self.menu == "more" and text.strip():         # they chose to just say it: the menu isn't needed
+            self._close_more()
+            await self.push_dial()
         named = [(m.start(), t) for t, rx in TOPIC_RE.items() for m in re.finditer(rx, text, re.I)]
         topic = max(named)[1] if named else self.topic
         if topic not in SAID_RE:
@@ -281,6 +313,8 @@ class Session:
         (answers an open question without speech)."""
         if self.dial_on:
             return await self.confirm_dial()
+        if self.typing:
+            return
         if not self.task or time.time() - self._last_move_on < 3:
             return
         self._last_move_on = time.time()
@@ -294,6 +328,8 @@ class Session:
         if not (self.dial_on and self.topic and self.task):
             return
         self._cancel_dwell()
+        if self.menu == "more":
+            return await self._more_chosen(MORE[self.dial_index], how)
         topic, level = self.topic, dial_options(self.topic)[self.dial_index]
         skipped = level == SKIP
         self.levels[topic], self.dial_on, self.dial_armed = ("skipped" if skipped else level), False, False
@@ -308,6 +344,71 @@ class Session:
         self.context.add_message({"role": "user", "content":
                                   f"(With a wrist tilt, the wearer chose to skip {topic}.)" if skipped else
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
+        if not skipped and level in guardrails.WATCH.get(topic, ()):
+            return await self._offer_more(topic, level)   # worth asking about: let them say or type more
+        await self.avatar("thinking")
+        await self.task.queue_frames([LLMRunFrame()])
+
+    # -------------------------------------------------------------- tell me more (say it / type it)
+    async def _offer_more(self, topic: str, level: str):
+        await asyncio.sleep(0.8)                          # let the chosen answer flash first
+        self.menu, self.more_for = "more", (topic, level)
+        self.dial_on, self.dial_armed, self.dial_index = True, False, MORE_REST
+        self.roll_zero = None                             # however the wrist rests now = "no thanks"
+        await self.push_dial()
+        await self.avatar("idle")
+        self._more_timer = asyncio.create_task(self._more_timeout())
+
+    async def _more_timeout(self):
+        await asyncio.sleep(MORE_TIMEOUT)
+        if self.menu == "more" and not self.typing:
+            self._more_timer = None                       # we are that task: don't let close cancel us
+            await self._more_chosen("no_thanks", "timeout")
+
+    def _close_more(self):
+        if self._more_timer:
+            self._more_timer.cancel()
+            self._more_timer = None
+        if self.menu == "more":
+            self.menu, self.dial_on, self.dial_armed = None, False, False
+        self.typing = False
+
+    async def _more_chosen(self, choice: str, how: str):
+        topic, level = self.more_for or (self.topic, "")
+        await self.hud.send({"type": "dial", "active": False, "topic": topic, "chosen": MORE.index(choice)},
+                            sticky=False)
+        self._close_more()
+        prov.log("wrist->hud", "tell-me-more choice (one word)", "this Mac", topic=topic, choice=choice, how=how)
+        if choice == "type_it":
+            self.typing = True
+            await self.hud.send({"type": "typebox", "open": True, "topic": topic,
+                                 "prompt": f"Tell me more about your {topic}"}, sticky=False)
+            await self.avatar("listening")
+            return
+        note = (f"(The wearer wants to say more about {topic}. Invite them in a few words, like \"Go ahead, "
+                f"I'm listening.\" Don't ask a new question yet.)" if choice == "say_it" else
+                f"(The wearer chose not to add more about {topic}. Go on.)")
+        self.context.add_message({"role": "user", "content": note})
+        await self.avatar("thinking")
+        await self.task.queue_frames([LLMRunFrame()])
+
+    async def typed(self, text: str, topic: str | None = None):
+        """Text the wearer typed on the HUD: same redaction and provenance as speech, then to Gemini."""
+        text = " ".join(str(text or "").split())[:400]
+        self._close_more()
+        await self.hud.send({"type": "typebox", "open": False}, sticky=False)
+        if not self.task:
+            return
+        if not text:                                      # Esc / empty: same as "no thanks"
+            self.context.add_message({"role": "user", "content": "(The wearer chose not to add more. Go on.)"})
+        else:
+            clean, spans = guardrails.redact(text)
+            prov.log("hud->llm", "typed text (redacted)", "Gemini (Google)",
+                     redactions=[x["type"] for x in spans])
+            await self.hud.send({"type": "caption", "who": "you", "text": "⌨ " + clean}, sticky=False)
+            await self.heard(clean)
+            about = f" about {topic}" if topic in TOPICS else ""
+            self.context.add_message({"role": "user", "content": f"(Typed by the wearer{about}:) {clean}"})
         await self.avatar("thinking")
         await self.task.queue_frames([LLMRunFrame()])
 
@@ -357,6 +458,79 @@ class Session:
             await self.move_dial(-1 if msg.get("delta", 0) < 0 else 1)
         elif kind == "confirm":
             await self.double_tap()
+        elif kind == "typed":
+            await self.typed(msg.get("text", ""), msg.get("topic"))
+        elif kind == "still_test":                        # HUD key T: rehearse the stillness nudge without the band
+            if self.still.waiting:                        # pressed again while a nudge is open = "they stretched"
+                self.still.mark_moved()
+                await self.still_moved()
+            else:
+                self.still.mark_nudged()                  # T bypasses the 3-nudge cap (rehearsal only)
+                await self.still_nudge("HUD key T")
+
+    # -------------------------------------------------------------- stillness -> stretch nudge (after the card)
+    STRETCH_LINE = "You've been still for a while. Want to stretch your arms for a moment?"
+
+    async def still_nudge(self, why: str = "band"):
+        """One stretch reminder: Sprout stretches, a HUD card, one spoken line (no LLM call)."""
+        logger.info(f"Stillness nudge #{self.still.nudges} ({why})")
+        prov.log("band->mac", "stillness (motion only)", "this Mac", event="stretch reminder", trigger=why)
+        await self.avatar("stretch")
+        await self.hud.send({"type": "card", "id": "stretch", "title": "Time for a stretch",
+                             "body": "You've been still for a bit. Roll your shoulders or raise your arms.",
+                             "meta": "measured by the band (motion only)", "kind": "info"}, sticky=False)
+        if self.task:
+            from pipecat.frames.frames import TTSSpeakFrame
+            await self.task.queue_frames([TTSSpeakFrame(self.STRETCH_LINE, append_to_context=False)])
+            prov.log("mac->tts", "fixed stretch reminder line", "text-to-speech")
+        if self._stretch_hold:
+            self._stretch_hold.cancel()
+        self._stretch_hold = asyncio.create_task(self._keep_stretch())
+        self.save_movement()
+
+    async def _keep_stretch(self):
+        """Speaking the line flips Sprout to speaking -> idle; put the stretch back until the wrist moves."""
+        try:
+            for _ in range(60):                           # ~15 s
+                await asyncio.sleep(0.25)
+                if self._avatar == "idle" and self.still.waiting:
+                    await self.avatar("stretch")
+        except asyncio.CancelledError:
+            pass
+
+    async def still_moved(self):
+        """The wrist moved clearly after a nudge: a short cheer, count it."""
+        logger.info(f"Stretch #{self.still.stretches} after a reminder")
+        prov.log("band->mac", "stillness (motion only)", "this Mac", event="moved after reminder")
+        if self._stretch_hold:
+            self._stretch_hold.cancel()
+            self._stretch_hold = None
+        await self.avatar("cheer")
+        await self.hud.send({"type": "gesture", "text": "🙌 nice stretch"}, sticky=False)
+        self.save_movement()
+
+        async def back_to_idle():
+            await asyncio.sleep(2.5)
+            if self._avatar == "cheer":
+                await self.avatar("idle")
+        asyncio.create_task(back_to_idle())
+
+    def save_movement(self):
+        """Device-measured counts on this session's card, kept apart from what the wearer said."""
+        if not self.checkin_done or not (self.still.nudges or self.still.stretches):
+            return
+        mv = {"source": "measured by the band", "still_nudges": self.still.nudges,
+              "stretches": self.still.stretches}
+        for path in (HERE / "cards" / f"{prov.session}.json", HERE / "cards" / "latest.json"):
+            try:
+                card = json.loads(path.read_text())
+                if card.get("session") != prov.session:   # latest.json is someone else's check-in now
+                    continue
+                card["movement"] = mv
+                path.write_text(json.dumps(card, indent=2))
+            except (OSError, ValueError) as e:
+                logger.warning(f"movement count not saved to {path.name}: {e}")
+        prov.log("mac->card", "movement counts (numbers only)", f"cards/{prov.session}.json")
 
 
 # ------------------------------------------------------------------ wrist flick = "I'm done talking"
@@ -428,7 +602,7 @@ class HudBandInput(nk.VexoBandInput):
             # fired on every flick in the first real run. Camera = voice ("here's my lunch") or the HUD's P key.
             b.on("double-tap", lambda e: self._hop(self._s.double_tap()))
         b.configure(motion=25, events=True)               # low rate: motion shares the Bluetooth link with audio
-        prov.log("band->mac", "wrist motion 25/s (tilt only)", "this Mac (Bluetooth)")
+        prov.log("band->mac", "wrist motion 25/s (tilt + stillness)", "this Mac (Bluetooth)")
 
     def _hop(self, coro):
         if self._s.loop:
@@ -444,6 +618,14 @@ class HudBandInput(nk.VexoBandInput):
             if spin > self._flick_dps and now - self._last_flick > 1.0:
                 self._last_flick = now
                 self._hop(self._on_flick(spin))
+        w = self._s.still                                 # stillness -> stretch nudge (armed after the card)
+        if w.armed:
+            t = m.t / 1000 if getattr(m, "t", None) is not None else time.time()
+            ev = w.feed(m.ax, m.ay, m.az, m.gx, m.gy, m.gz, t)
+            if ev == "nudge":
+                self._hop(self._s.still_nudge())
+            elif ev == "moved":
+                self._hop(self._s.still_moved())
         if m.ax is None:
             return
         roll = math.degrees(math.atan2(m.ay, m.az))      # gravity only: tilt is reliable, turning is not (no compass)
@@ -575,6 +757,8 @@ def make_submit(session: Session):
                                     "body": "988 Suicide & Crisis Lifeline: call or text 988.", "kind": "alert"},
                                    sticky=False)
         logger.success(f"Card saved: {out}" + ("  ** ESCALATION FLAG **" if escalate else ""))
+        session.checkin_done = session.still.armed = True  # stillness -> stretch nudges may start now
+        session.save_movement()                           # counts from a T-key rehearsal before the card
         await params.result_callback({"status": "saved"})
     return submit_summary
 
@@ -592,7 +776,7 @@ async def main():
     ap.add_argument("--max-minutes", type=float, default=4, help="hard stop so a forgotten run can't burn credits")
     ap.add_argument("--no-speaker", action="store_true")
     ap.add_argument("--flip-dial", action="store_true", help="if tilting right moves the dial left")
-    ap.add_argument("--dwell", type=float, default=1.2,
+    ap.add_argument("--dwell", type=float, default=2.0,
                     help="seconds to hold a tilt before it confirms (0 = double-tap / Enter only)")
     ap.add_argument("--lang", choices=["ask", "en", "es"], default="ask",
                     help="check-in language; 'ask' = pick it on the HUD start screen (nothing speaks until then)")
@@ -601,6 +785,8 @@ async def main():
                     help="max seconds of silence before the bot answers (Pipecat default 3)")
     ap.add_argument("--flick-dps", type=float, default=350,
                     help="wrist turning speed (degrees/second) that counts as an 'I'm done' flick")
+    ap.add_argument("--still-secs", type=float, default=15,
+                    help="after the card: seconds of a still wrist before ONE stretch reminder (real use: 2700-3600)")
     a = ap.parse_args()
     if not a.sim and a.number is None:
         ap.error("give your band number, or --sim")
@@ -608,6 +794,7 @@ async def main():
     hud = HudServer(port=a.port)
     await hud.start()
     session = Session(hud, flip_dial=a.flip_dial, dwell=a.dwell)
+    session.still.still_secs = a.still_secs
     session.loop = asyncio.get_running_loop()
     hud.on_message = session.on_hud_message
 

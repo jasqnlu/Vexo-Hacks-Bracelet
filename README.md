@@ -44,8 +44,11 @@ Sprout is driven live by the voice pipeline (Pipecat's turn and speech events), 
 **For the wearer**
 - 🗣️ **Voice-first check-in:** "How was your day?" → one natural follow-up when something happened → sleep, mood,
   stress, appetite → "anything else?" → "would you like a clinician to follow up?"
-- 🤚 **No voice needed:** tilt the wrist to move a dial, **hold** to confirm (or double-tap), **tilt far left to
-  skip**. Double-tap answers "nothing to add". Built for people who don't use speech, or not all the time.
+- 🤚 **No voice needed:** tilt the wrist to move a dial, **hold 2 s** to confirm (or double-tap), **tilt far left
+  to skip**. Double-tap answers "nothing to add". Built for people who don't use speech, or not all the time.
+- ⌨️ **Tell me more, your way:** when a tilt answer is worth asking about (poor sleep, low mood…), the dial turns
+  into *"Tell me more?"*: tilt left to **say it**, right to **type it**, or stay put for no thanks. Typed words go
+  through the same redaction, safety gate and provenance log as speech, and can be quoted on the card.
 - ✋ **Wrist flick:** flick while Tend is talking and it stops; flick after you speak and it answers right away.
 - 📷 **Show, don't tell:** "here's my lunch" attaches one camera frame; Gemini notes the objects only (never people).
 - 🌎 **English or Español**, chosen on the first screen; nothing speaks until you choose. With Deepgram Flux,

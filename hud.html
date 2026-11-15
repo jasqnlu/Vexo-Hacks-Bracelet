@@ -103,6 +103,16 @@
   .dial.show { display: block; animation: dialIn .3s ease-out both; }
   @keyframes dialIn { from { opacity: 0; transform: translate(-50%, -46%); } }
   .dial .q { color: var(--dim); font-size: 15px; margin-bottom: 14px; }
+  /* typed answer ("tell me more" → type it) */
+  .typebox { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+    width: min(580px, calc(100vw - 720px)); min-width: 440px; padding: 20px; border-radius: 30px;
+    background: var(--glass-hi); display: none; text-align: center; }
+  .typebox.show { display: block; animation: dialIn .3s ease-out both; }
+  .typebox .q { color: var(--ink); font-size: 17px; margin-bottom: 12px; }
+  .typebox textarea { width: 100%; box-sizing: border-box; resize: none; font: inherit; font-size: 18px; line-height: 1.4;
+    color: var(--ink); background: rgba(255,255,255,.05); border: 1px solid var(--mint); border-radius: 18px;
+    padding: 14px 16px; outline: none; }
+  .typebox .hint { margin-top: 10px; font-size: 12.5px; color: var(--quiet); }
   .opts { display: flex; gap: 8px; }
   .opt { flex: 1; padding: 16px 6px 17px; border-radius: 20px; border: 1px solid var(--line); color: var(--dim);
     font-size: 26px; font-weight: 200; letter-spacing: -.01em; text-transform: capitalize;
@@ -239,6 +249,20 @@
   .sprout.concern .sp-smile { opacity: 0; }
   .sprout.concern .sp-soft { opacity: 1; }
   .sprout.concern .sp-label { color: var(--mid); border-color: rgba(255,213,138,.6); }
+  /* stretch: after a still stretch of time; leaves reach up, body grows a little taller (static if reduced motion) */
+  .sprout.stretch { --glow: rgba(126,242,196,.6); }
+  .sprout.stretch .sp-lean { transform: scale(.96, 1.07); animation: sp-stretch 3.2s ease-in-out infinite; }
+  .sprout.stretch .sp-leaf.l { transform: rotate(30deg); animation: sp-reachl 3.2s ease-in-out infinite; }
+  .sprout.stretch .sp-leaf.r { transform: rotate(-30deg); animation: sp-reachr 3.2s ease-in-out infinite; }
+  .sprout.stretch .sp-eyes { transform: scaleY(.3); }
+  .sprout.stretch .sp-label { color: var(--mint); border-color: rgba(126,242,196,.55); }
+  /* cheer: a short happy hop after the wrist moved again */
+  .sprout.cheer { --glow: rgba(126,242,196,.75); }
+  .sprout.cheer .sp-fig { animation: sp-hop .55s ease-in-out 4; }
+  .sprout.cheer .sp-leaf.l { transform: rotate(24deg); }
+  .sprout.cheer .sp-leaf.r { transform: rotate(-24deg); }
+  .sprout.cheer .sp-eyes { transform: scaleY(.3); }
+  .sprout.cheer .sp-label { color: var(--mint); border-color: rgba(126,242,196,.55); }
 
   @keyframes sp-breathe { 50% { transform: scale(1.035, 1.02); } }
   @keyframes sp-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
@@ -249,6 +273,10 @@
     58% { transform: scaleY(.9); } 78% { transform: scaleY(.3); } 100% { transform: scaleY(.35); } }
   @keyframes sp-leafl { 50% { transform: rotate(7deg); } }
   @keyframes sp-leafr { 50% { transform: rotate(-7deg); } }
+  @keyframes sp-stretch { 0%, 100% { transform: scale(1, 1); } 45%, 70% { transform: scale(.96, 1.07); } }
+  @keyframes sp-reachl { 0%, 100% { transform: rotate(4deg); } 45%, 70% { transform: rotate(34deg); } }
+  @keyframes sp-reachr { 0%, 100% { transform: rotate(-4deg); } 45%, 70% { transform: rotate(-34deg); } }
+  @keyframes sp-hop { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-10px) scale(.98, 1.03); } }
   @keyframes sp-dot { 0%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
   @media (max-height: 760px) {
     .sprout:not(.hero-sprout) { transform: scale(.78); transform-origin: 0 100%; }
@@ -278,7 +306,13 @@
 <div class="dial glass" id="dial">
   <div class="q" id="dialQ">Tilt your wrist to choose</div>
   <div class="opts" id="opts"></div>
-  <div class="hint">Tilt to choose · far left skips · hold or double-tap to confirm · or just say it</div>
+  <div class="hint" id="dialHint">Tilt to choose · far left skips · hold or double-tap to confirm · or just say it</div>
+</div>
+
+<div class="typebox glass" id="typebox" role="dialog" aria-label="Type your answer">
+  <div class="q" id="typeQ">Tell me more</div>
+  <textarea id="typeIn" maxlength="400" rows="3" placeholder="Type here…"></textarea>
+  <div class="hint">Enter to send · Shift+Enter new line · Esc for no thanks</div>
 </div>
 
 <div class="caps" id="caps"></div>
@@ -450,7 +484,10 @@ function handle(m) {
   else if (m.type === "caption") caption(m.who, m.text);
   else if (m.type === "card") { if (m.id === "streak") sfx("streak"); addCard(m); }
   else if (m.type === "wrist") wrist(m);
-  else if (m.type === "dial") dial(m);
+  else if (m.type === "dial") { dial(m); if (m.active) $("dialHint").textContent = m.menu === "more"
+      ? "Tilt left to say it · right to type it · double-tap for no thanks"
+      : "Tilt to choose · far left skips · hold or double-tap to confirm · or just say it"; }
+  else if (m.type === "typebox") typebox(m);
   else if (m.type === "flash") { const s = $("shutter"); s.classList.remove("go"); void s.offsetWidth; s.classList.add("go"); }
   else if (m.type === "select") moveSel(m.delta);
   else if (m.type === "avatar") setAvatar(m.state);
@@ -525,14 +562,15 @@ function dial(m) {
   $("dialQ").textContent = m.question || `How was your ${m.topic}?`;
   $("opts").innerHTML = m.options.map((o, i) => {
     const hot = i === m.index, fill = hot && m.dwell > 0;
-    const label = o === "skip" ? "⟵ skip" : o.replaceAll("_", " ");
+    const label = o === "skip" ? "⟵ skip" : o === "say_it" ? "🎙 say it" : o === "type_it" ? "⌨ type it" : o.replaceAll("_", " ");
     return `<div class="opt ${hot ? "hot" : ""} ${fill ? "fill" : ""} ${o === "skip" ? "skip" : ""}" style="--dwell:${m.dwell || 0}s"><span>${esc(label)}</span></div>`;
   }).join("");
 }
 
 // ------------------------------------------------------------ Sprout (character)
-const AVATAR = { idle: "ready", listening: "listening…", thinking: "thinking…", speaking: "speaking", concern: "here with you" };
-const AVATAR_CYCLE = ["idle", "listening", "thinking", "speaking", "concern"];
+const AVATAR = { idle: "ready", listening: "listening…", thinking: "thinking…", speaking: "speaking", concern: "here with you",
+                 stretch: "time to stretch?", cheer: "nice stretch!" };
+const AVATAR_CYCLE = ["idle", "listening", "thinking", "speaking", "concern", "stretch", "cheer"];
 let avatarState = "idle", avatarT = null;
 function setAvatar(s, force) {
   if (!(s in AVATAR)) return;
@@ -542,9 +580,35 @@ function setAvatar(s, force) {
   $("sprout").className = "sprout " + s;
   $("spLabel").textContent = AVATAR[s];
   if (s === "thinking") avatarT = setTimeout(() => setAvatar("idle"), 12000);   // e.g. a silent tool call
+  if (s === "cheer") { sfx("confirm"); avatarT = setTimeout(() => setAvatar("idle"), 3000); }
 }
 
+let typeTopic = null;
+function typebox(m) {
+  const box = $("typebox"), inp = $("typeIn");
+  if (m.open) {
+    typeTopic = m.topic || null;
+    $("typeQ").textContent = m.prompt || "Tell me more";
+    inp.value = "";
+    box.classList.add("show");
+    setTimeout(() => inp.focus(), 50);
+  } else {
+    box.classList.remove("show");
+    inp.blur();
+  }
+}
+function sendTyped(text) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "typed", text, topic: typeTopic }));
+  typebox({ open: false });
+}
+$("typeIn").addEventListener("keydown", e => {
+  e.stopPropagation();                            // typing must not trigger the HUD's letter keys
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTyped($("typeIn").value.trim()); }
+  else if (e.key === "Escape") { e.preventDefault(); sendTyped(""); }
+});
+
 document.addEventListener("keydown", e => {
+  if (e.target && e.target.closest && e.target.closest("#typebox")) return;
   if (e.key === "m" || e.key === "M") video.classList.toggle("mirror");
   if (e.key === "n" || e.key === "N") {           // sounds on/off
     sfxOn = !sfxOn;
@@ -559,6 +623,7 @@ document.addEventListener("keydown", e => {
   const send = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
   if (e.key === "p" || e.key === "P") send({ type: "show" });
   if (e.key === "f" || e.key === "F") send({ type: "flick" });   // same as a wrist flick
+  if (e.key === "t" || e.key === "T") send({ type: "still_test" });   // stillness nudge now (again = "I stretched")
   if (e.key === "ArrowLeft") send({ type: "dial_move", delta: -1 });
   if (e.key === "ArrowRight") send({ type: "dial_move", delta: 1 });
   if (e.key === "Enter") send({ type: "confirm" });
