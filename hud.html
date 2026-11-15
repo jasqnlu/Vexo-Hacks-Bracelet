@@ -351,7 +351,7 @@
       <button class="lang" data-lang="es">Español</button>
     </div>
   </div>
-  <p class="keys">Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · F flick (stop / done) · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
+  <p class="keys">Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · F flick (stop / done) · ← → dial · Enter confirm · M mirror · C captions · S Sprout · N sounds</p>
 </div>
 
 <script>
@@ -392,11 +392,33 @@ async function startCamera(deviceId) {
   video.classList.toggle("mirror", !/iphone|continuity|back/.test(label));   // a phone camera points away: no mirror
 }
 $("camSel").onchange = e => startCamera(e.target.value);
+// ------------------------------------------------------------ sound effects (sounds/*.mp3, made once by make_sounds.py)
+const SFX = {};
+["confirm", "skip", "streak", "stop"].forEach(n => { const a = new Audio(`sounds/${n}.mp3`); a.preload = "auto"; a.volume = 0.5; SFX[n] = a; });
+let sfxOn = true;
+try { sfxOn = localStorage.getItem("tend_sfx") !== "off"; } catch (e) {}
+function sfx(n) {
+  const a = SFX[n];
+  if (!sfxOn || !a) return;
+  try { a.currentTime = 0; const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+}
+function unlockSfx() {                          // browsers allow audio only after a user gesture: prime each element silently
+  Object.values(SFX).forEach(a => {
+    try {
+      a.muted = true;
+      const p = a.play();
+      const done = () => { a.pause(); a.currentTime = 0; a.muted = false; };
+      if (p && p.then) p.then(done, () => { a.muted = false; }); else done();
+    } catch (e) { a.muted = false; }
+  });
+}
+
 // Language first: the bot builds its voice pipeline only after this choice, so nothing talks "off the rip".
 let chosenLang = null;
 function sendBegin() { if (chosenLang && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "begin", lang: chosenLang })); }
 document.querySelectorAll("button.lang").forEach(b => b.onclick = async () => {
   chosenLang = b.dataset.lang;
+  unlockSfx();
   sendBegin();                                  // (re)sent on every reconnect too, see connect()
   try { await startCamera(); }
   catch (e) { console.warn("camera blocked: " + e.message); }   // the check-in works without the camera
@@ -426,13 +448,14 @@ connect();
 function handle(m) {
   if (m.type === "state") { Object.assign(state, m); renderRail(); setListening(m.listening); }
   else if (m.type === "caption") caption(m.who, m.text);
-  else if (m.type === "card") addCard(m);
+  else if (m.type === "card") { if (m.id === "streak") sfx("streak"); addCard(m); }
   else if (m.type === "wrist") wrist(m);
   else if (m.type === "dial") dial(m);
   else if (m.type === "flash") { const s = $("shutter"); s.classList.remove("go"); void s.offsetWidth; s.classList.add("go"); }
   else if (m.type === "select") moveSel(m.delta);
   else if (m.type === "avatar") setAvatar(m.state);
   else if (m.type === "gesture") {
+    if (String(m.text || "").includes("stopped")) sfx("stop");
     const t = $("listenTxt"), p = $("listen");
     t.textContent = m.text; p.style.borderColor = "var(--accent)";
     clearTimeout(window._gT);
@@ -485,17 +508,20 @@ function wrist(m) {
   $("wristTxt").textContent = `roll ${m.roll.toFixed(0)}°  pitch ${m.pitch.toFixed(0)}°`;
   $("rollDot").style.left = (50 + Math.max(-45, Math.min(45, m.roll)) / 45 * 50) + "%";
 }
+let lastDialOpts = [];
 function dial(m) {
   const d = $("dial");
   clearTimeout(window._dialT);
   if (m.chosen != null) {                       // confirmed: flash the pick green, then hide
     const o = $("opts").children[m.chosen];
+    sfx((o ? o.classList.contains("skip") : lastDialOpts[m.chosen] === "skip") ? "skip" : "confirm");
     if (o) { o.className = "opt chosen" + (o.classList.contains("skip") ? " skip" : ""); o.firstChild.textContent = "✓ " + o.firstChild.textContent; }
     window._dialT = setTimeout(() => d.classList.remove("show"), 700);
     return;
   }
   d.classList.toggle("show", !!m.active);
   if (!m.active) return;
+  lastDialOpts = m.options || [];
   $("dialQ").textContent = m.question || `How was your ${m.topic}?`;
   $("opts").innerHTML = m.options.map((o, i) => {
     const hot = i === m.index, fill = hot && m.dwell > 0;
@@ -520,6 +546,10 @@ function setAvatar(s, force) {
 
 document.addEventListener("keydown", e => {
   if (e.key === "m" || e.key === "M") video.classList.toggle("mirror");
+  if (e.key === "n" || e.key === "N") {           // sounds on/off
+    sfxOn = !sfxOn;
+    try { localStorage.setItem("tend_sfx", sfxOn ? "on" : "off"); } catch (err) {}
+  }
   if (e.key === "c" || e.key === "C") $("caps").style.display = $("caps").style.display === "none" ? "" : "none";
   if (e.key === "ArrowDown") moveSel(1);
   if (e.key === "ArrowUp") moveSel(-1);
