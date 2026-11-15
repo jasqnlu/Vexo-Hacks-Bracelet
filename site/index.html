@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tend: two minutes a day, out loud</title>
+<meta name="description" content="Tend is a two-minute daily talk on your wrist. Say, tilt or type how your day went; your care team gets a clear, non-diagnostic summary in your own words.">
+<meta property="og:title" content="Tend: two minutes a day, out loud">
+<meta property="og:description" content="A two-minute daily talk on a wrist band. Your care team gets a clear, non-diagnostic summary in your own words.">
+<meta property="og:image" content="assets/hud-start.png">
+<meta name="theme-color" content="#05070a">
+<link rel="icon" href="assets/sprout-hero.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <a class="brand" href="#top" aria-label="Tend, back to top">
+    <img src="assets/sprout-ready.png" alt="" width="36" height="30">
+    <span>Tend</span>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#how">How it goes</a>
+    <a href="#care-team">For the care team</a>
+    <a href="#privacy">Privacy</a>
+    <a class="pill" href="https://github.com/jasqnlu/Vexo-Hacks-Bracelet">GitHub</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="sprout-orb">
+    <img src="assets/sprout-hero.png" alt="Sprout, Tend's seedling character: a round mint-green sprout with two leaves and a small smile, inside a glass bubble" width="280" height="280">
+  </div>
+  <h1>Two minutes a day,<br>out loud.</h1>
+  <p class="lede">Tend is a daily talk on your wrist. Say, tilt or type how your day went; your care team gets a clear, non-diagnostic summary in your own words.</p>
+  <div class="actions">
+    <a class="btn btn-mint" href="https://github.com/jasqnlu/Vexo-Hacks-Bracelet">View the code on GitHub</a>
+    <a class="btn btn-ghost" href="#how">See how a talk goes</a>
+  </div>
+  <p class="made">Built in one day at VexoHacks, Vexo × Y Combinator, November 14, 2026.</p>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem wrap">
+  <h2>Life happens between appointments.</h2>
+  <div class="problem-grid">
+    <p>Visits are short, and a big part of each one goes to rebuilding the weeks since the last one. <em>How have you been sleeping? Eating? Stressed?</em> You try to sum up three weeks in thirty seconds, and the bad nights, the skipped meals and the hard week are already a blur.</p>
+    <p>Wearables count steps and heartbeats, but they can't tell anyone how you feel. Questionnaires could, but people stop filling them in. Tend lets the weeks between visits speak for themselves: no screen, no form.</p>
+  </div>
+  <figure class="stat">
+    <blockquote>Physicians spend nearly two hours on the health record and desk work for every hour with patients.</blockquote>
+    <figcaption>Sinsky et al., <cite>Annals of Internal Medicine</cite>, 2016</figcaption>
+  </figure>
+</section>
+
+<!-- HOW -->
+<section class="how wrap" id="how">
+  <h2>How a daily talk goes</h2>
+  <ol class="steps">
+    <li class="step">
+      <div class="step-text">
+        <span class="num" aria-hidden="true">1</span>
+        <h3>Double-tap the band</h3>
+        <p>Tend wakes on the Vexo band and speaks through your earbuds. Pick English or Español; mixed Spanglish is understood too.</p>
+      </div>
+      <figure class="shot"><img src="assets/hud-start.png" alt="Tend start screen: Sprout in a glowing bubble above the word Tend, with buttons for English and Español" loading="lazy" width="1440" height="900"></figure>
+    </li>
+    <li class="step">
+      <div class="step-text">
+        <span class="num" aria-hidden="true">2</span>
+        <h3>"How was your day?"</h3>
+        <p>Tend listens, then follows up once, the way a friend would. Sprout shows when it's listening, thinking or speaking.</p>
+      </div>
+      <figure class="talk" aria-label="Example exchange">
+        <p class="bubble you"><b>You</b> Work was a lot today, the deadline moved up.</p>
+        <p class="bubble tend"><b>Tend</b> That sounds like a full day. What made it rough?</p>
+        <p class="bubble you"><b>You</b> Mostly the waiting. I'm okay now.</p>
+      </figure>
+    </li>
+    <li class="step">
+      <div class="step-text">
+        <span class="num" aria-hidden="true">3</span>
+        <h3>Sleep, mood, stress, appetite</h3>
+        <p>One question at a time. Answer out loud, or tilt your wrist to pick on a dial. Each answer lands on the screen as you give it.</p>
+      </div>
+      <figure class="shot"><img src="assets/hud-live.png" alt="Live check-in screen: a dial asks how stressed you have felt with Low, Medium and High, Medium highlighted; captions show the wearer's words and Tend's reply" loading="lazy" width="1440" height="900"></figure>
+    </li>
+    <li class="step">
+      <div class="step-text">
+        <span class="num" aria-hidden="true">4</span>
+        <h3>Your care team gets the card</h3>
+        <p>A one-glance summary in your own words, added to a 7-day timeline. Tend says goodbye and counts your streak.</p>
+      </div>
+      <figure class="shot light"><img src="assets/dash-today.png" alt="Today on the care team dashboard: sleep poor with the quote Muy mal, mood not discussed, stress high chosen by wrist tilt, appetite normal" loading="lazy" width="1280" height="470"></figure>
+    </li>
+  </ol>
+</section>
+
+<!-- SAY TILT TYPE -->
+<section class="modes wrap">
+  <h2>Say it, tilt it, or type it.</h2>
+  <p class="sub">Tend works for people who don't speak, or don't want to right now.</p>
+  <div class="modes-grid">
+    <ul class="mode-list">
+      <li><h3>Say it</h3><p>Talk the way you would to a friend. A quick wrist flick means "I'm done talking."</p></li>
+      <li><h3>Tilt it</h3><p>Roll your wrist to move the dial, hold to confirm, tilt far left to skip a topic.</p></li>
+      <li><h3>Type it</h3><p>After each tilt answer, Tend offers "Tell me more?" Say it or type it.</p></li>
+    </ul>
+    <figure class="shot"><img src="assets/hud-typebox.png" alt="Tell me more about your sleep: a text box with the typed answer 'Kept waking up around 3, the neighbors were loud'" loading="lazy" width="1440" height="900"></figure>
+  </div>
+  <figure class="sprouts">
+    <img src="assets/sprout-states.png" alt="Five Sprout states side by side: ready, listening, thinking, speaking, and here with you, where Sprout turns warm amber" loading="lazy" width="1440" height="200">
+    <figcaption>Sprout shows what Tend is doing, and goes calm and still when the conversation turns serious.</figcaption>
+  </figure>
+</section>
+
+<!-- CARE TEAM -->
+<div class="dawn" aria-hidden="true"></div>
+<section class="care" id="care-team">
+  <div class="wrap">
+    <h2>For the care team: a card you can read in seconds.</h2>
+    <p class="sub">Only what the wearer said, never an interpretation.</p>
+    <figure class="shot dash"><img src="assets/dashboard.png" alt="Full care team dashboard: today's four topic tiles, a 7-day overview with topics to ask about, three questions for the next visit, and a check-in timeline" loading="lazy" width="1440" height="1530"></figure>
+    <ul class="care-grid">
+      <li><h3>In their own words</h3><p>A level and a short quote for each topic, plus the topics worth asking about.</p></li>
+      <li><h3>7-day timeline</h3><p>Every check-in in one grid, so a hard week stands out before the visit starts.</p></li>
+      <li><h3>Questions for the next visit</h3><p>Gemini drafts two or three conversation starters from what was reported.</p></li>
+      <li><h3>Spoken weekly recap</h3><p>A 30-second summary, read aloud in Tend's voice.</p></li>
+      <li><h3>FHIR export</h3><p>One click sends a standard FHIR R4 record to the health record.</p></li>
+    </ul>
+  </div>
+</section>
+
+<!-- PRIVACY -->
+<section class="privacy" id="privacy">
+  <div class="wrap">
+    <h2>Private and safe by design.</h2>
+    <p class="sub">The dashboard shows where the data went: every hop, never the content.</p>
+    <ol class="trail" aria-label="Where the data goes">
+      <li><b>Band</b><span>Raw audio, never saved</span></li>
+      <li><b>Speech to text</b><span>Deepgram, or on the Mac in private mode</span></li>
+      <li><b>Redaction</b><span>Names, phones, addresses, dates removed on the device</span></li>
+      <li><b>Gemini</b><span>Sees redacted text only</span></li>
+      <li><b>Safety gate</b><span>Local rules check every word</span></li>
+      <li><b>Card</b><span>For the care team</span></li>
+    </ol>
+    <div class="safety">
+      <div>
+        <h3>Never a diagnosis</h3>
+        <p>A local safety gate checks every card, recap and visit question for diagnostic language. If wording is blocked, Gemini gets the exact fix list and rewrites it. Plain, auditable rules, not another AI.</p>
+      </div>
+      <div>
+        <h3>When someone is struggling</h3>
+        <p>If the wearer mentions self-harm, Tend responds warmly, mentions the 988 Suicide &amp; Crisis Lifeline, and flags the card for the care team.</p>
+      </div>
+      <div>
+        <h3>Nothing kept that shouldn't be</h3>
+        <p>Raw audio is never written to disk. Camera frames go out only when you show something, and are never stored.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILT WITH -->
+<section class="built" id="built">
+  <div class="wrap">
+    <h2>Built with</h2>
+    <ul class="badges">
+      <li><b>Pipecat</b><span>The whole conversation, with a custom input for the wrist band</span></li>
+      <li><b>Deepgram</b><span>Nova and Flux speech to text, Aura-2 voice</span></li>
+      <li><b>Gemini 4 Hydrogen</b><span>The talk, the card and the visit questions, with self-correcting tool calls</span></li>
+      <li><b>ElevenLabs</b><span>Eleven v4 Turbo, Tend's voice and the weekly recap</span></li>
+      <li><b>Vexo</b><span>The band: mic and motion over Bluetooth</span></li>
+    </ul>
+    <a class="btn btn-dark" href="https://github.com/jasqnlu/Vexo-Hacks-Bracelet">Read the code on GitHub</a>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <div class="foot-brand">
+      <img src="assets/sprout-ready.png" alt="" width="48" height="40">
+      <p><b>Tend</b>. Made at VexoHacks, Vexo × Y Combinator, San Francisco.</p>
+    </div>
+    <p class="disclaimer">Hackathon prototype with synthetic data. Not a medical device; does not diagnose. If you're struggling, call or text <a href="tel:988">988</a> (US).</p>
+  </div>
+</footer>
+
+</body>
+</html>
