@@ -89,6 +89,10 @@ the greeting, follow-ups, "¿Hay algo más que quieras añadir?" and the goodbye
 (it has Spanish support). BUT write every submit_summary text field (reported, other_notes, shown) in ENGLISH for
 the clinician; a `quote` keeps the wearer's exact Spanish words.""",
 }
+SPANGLISH_EXTRA = (
+    "\nThe wearer may mix English and Spanish, even in one sentence. That's fine: understand both and never"
+    " correct their language. Keep replying in the check-in language. Quotes on the card keep their own words"
+    " exactly as said; the rest of the card stays in English.\n")
 
 def streak_days(timeline: list, today=None, include_today: bool = True) -> int:
     """Consecutive calendar days with a check-in, ending today. include_today=True counts the check-in that is
@@ -581,7 +585,10 @@ async def main():
     ap.add_argument("number", nargs="?", type=int)
     ap.add_argument("--sim", action="store_true")
     ap.add_argument("--replay", default=str(KIT / "dashboard/speech/sample-speech.opus"))
-    ap.add_argument("--stt", choices=["deepgram", "whisper"], default="deepgram")
+    ap.add_argument("--stt", choices=["deepgram", "flux", "whisper"], default="deepgram",
+                    help="flux = Deepgram Flux multilingual (English+Spanish mixed) with its own end-of-turn detection")
+    ap.add_argument("--tts", choices=["elevenlabs", "deepgram"], default="elevenlabs",
+                    help="deepgram = Deepgram Aura-2 voice (saves ElevenLabs credit in rehearsals)")
     ap.add_argument("--max-minutes", type=float, default=4, help="hard stop so a forgotten run can't burn credits")
     ap.add_argument("--no-speaker", action="store_true")
     ap.add_argument("--flip-dial", action="store_true", help="if tilting right moves the dial left")
@@ -624,6 +631,19 @@ async def main():
                                               if session.lang == "en" else ["apetito", "estrés", "ansiedad"])))
         stt_dest = "Deepgram (cloud, redact=pci/ssn/numbers)"
         prov.log("mac->deepgram", "raw audio stream", "Deepgram (cloud)", note="cloud mode")
+    elif a.stt == "flux":
+        # Flux: one multilingual model that also decides when the wearer is done talking. Hints put the chosen
+        # language first, so Spanglish ("dormí bad, honestly") comes through in one transcript.
+        from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
+        from pipecat.transcriptions.language import Language
+        hints = [Language.EN, Language.ES] if session.lang == "en" else [Language.ES, Language.EN]
+        stt = DeepgramFluxSTTService(api_key=os.environ["DEEPGRAM_API_KEY"], sample_rate=SAMPLE_RATE,
+                                     settings=DeepgramFluxSTTService.Settings(
+                                         model="flux-general-multi", language_hints=hints, redact="numbers",
+                                         keyterm=["appetite", "insomnia", "anxious", "stressed",
+                                                  "apetito", "estrés", "ansiedad"]))
+        stt_dest = "Deepgram Flux (cloud, multilingual, redact=numbers)"
+        prov.log("mac->deepgram", "raw audio stream", "Deepgram Flux (cloud)", note="cloud mode, en+es")
     else:
         from pipecat.services.whisper.stt import MLXModel, WhisperSTTServiceMLX
         stt = WhisperSTTServiceMLX(settings=WhisperSTTServiceMLX.Settings(model=MLXModel.LARGE_V3_TURBO_Q4))
@@ -637,19 +657,29 @@ async def main():
                                    thinking_level=os.getenv("GEMINI_THINKING", "low"))))
     llm.register_function("submit_summary", make_submit(session))
 
-    voice = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
-    tts_model = os.getenv("ELEVENLABS_MODEL", "eleven_v4_turbo")
-    if tts_model.startswith(("eleven_v3", "eleven_v4")):
-        from pipecat.services.elevenlabs.dialogue.tts import ElevenLabsDialogueTTSService as TTS
+    if a.tts == "deepgram":
+        from pipecat.services.deepgram.tts import DeepgramTTSService
+        aura = os.getenv("DEEPGRAM_VOICE_ES" if session.lang == "es" else "DEEPGRAM_VOICE_EN") or \
+            ("aura-2-celeste-es" if session.lang == "es" else "aura-2-helena-en")
+        tts = DeepgramTTSService(api_key=os.environ["DEEPGRAM_API_KEY"], sample_rate=24000,
+                                 settings=DeepgramTTSService.Settings(voice=aura))
+        tts_dest = f"Deepgram Aura-2 (cloud, {aura})"
     else:
-        from pipecat.services.elevenlabs.tts import ElevenLabsTTSService as TTS
-    tts = TTS(api_key=os.environ["ELEVENLABS_API_KEY"], settings=TTS.Settings(model=tts_model, voice=voice))
+        voice = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+        tts_model = os.getenv("ELEVENLABS_MODEL", "eleven_v4_turbo")
+        if tts_model.startswith(("eleven_v3", "eleven_v4")):
+            from pipecat.services.elevenlabs.dialogue.tts import ElevenLabsDialogueTTSService as TTS
+        else:
+            from pipecat.services.elevenlabs.tts import ElevenLabsTTSService as TTS
+        tts = TTS(api_key=os.environ["ELEVENLABS_API_KEY"], settings=TTS.Settings(model=tts_model, voice=voice))
+        tts_dest = "ElevenLabs (cloud)"
 
     p = summary_schema()
     tool = FunctionSchema(name="submit_summary",
                           description="Submit the structured, non-diagnostic check-in summary for the clinician card.",
                           properties=p["properties"], required=p["required"])
-    context = LLMContext(messages=[{"role": "system", "content": nk.SYSTEM + HUD_EXTRA + LANG_EXTRA[session.lang]}],
+    system = nk.SYSTEM + HUD_EXTRA + LANG_EXTRA[session.lang] + (SPANGLISH_EXTRA if a.stt == "flux" else "")
+    context = LLMContext(messages=[{"role": "system", "content": system}],
                          tools=ToolsSchema(standard_tools=[tool]))
     session.context = context
     # Smart Turn (local model) decides when the wearer is done. If it thinks they're mid-sentence it waits for
@@ -661,8 +691,14 @@ async def main():
     flick = FlickUserTurnStopStrategy()
     band_in.flick_strategy = session.flick_strategy = flick
     session.interrupter = band_in
-    turns = UserTurnStrategies(start=nk.calm_turn_start(), stop=[flick, TurnAnalyzerUserTurnStopStrategy(
-        turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
+    if a.stt == "flux":                                   # Flux says when a turn starts/ends; flick still wins
+        from pipecat.turns.user_start import ExternalUserTurnStartStrategy
+        from pipecat.turns.user_stop import ExternalUserTurnStopStrategy
+        turns = UserTurnStrategies(start=[ExternalUserTurnStartStrategy(enable_interruptions=False)],
+                                   stop=[flick, ExternalUserTurnStopStrategy()])
+    else:
+        turns = UserTurnStrategies(start=nk.calm_turn_start(), stop=[flick, TurnAnalyzerUserTurnStopStrategy(
+            turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
     aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
         vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns,
         user_mute_strategies=[nk.MuteWhileBotSpeaks()],    # no self-interruptions from the speakers / room
@@ -679,7 +715,7 @@ async def main():
 
     task = PipelineTask(Pipeline(procs), params=PipelineParams(audio_in_sample_rate=SAMPLE_RATE, enable_metrics=True))
     session.task = task
-    prov.log("llm->tts", "agent reply text", "ElevenLabs (cloud)")
+    prov.log("llm->tts", "agent reply text", tts_dest)
     await session.push_state()
 
     streak = streak_days(load_timeline())
