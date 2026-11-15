@@ -4,108 +4,190 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tend HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #f4f7fb; --dim: rgba(244,247,251,.62); --glass: rgba(14,18,28,.52);
-    --line: rgba(255,255,255,.14); --accent: #8fd3ff; --good: #9be7b0; --mid: #ffd98a;
-    --flag: #ff9b9b; --live: #ff5d5d;
+    --bg: #04050a;
+    --ink: #f6f8fb; --dim: rgba(232,238,246,.74); --quiet: rgba(232,238,246,.56);
+    --glass: rgba(8,10,16,.72); --glass-hi: rgba(12,15,24,.8);
+    --line: rgba(255,255,255,.20); --line-hi: rgba(255,255,255,.34);
+    --mint: #7ef2c4; --mint-soft: rgba(126,242,196,.16);
+    --violet: #b8a2ff; --violet-soft: rgba(184,162,255,.16);
+    --accent: var(--mint);
+    --good: #8ff0b5; --mid: #ffd58a; --flag: #ff9f9f; --live: #ff6b6b;
+    --r-lg: 26px; --r-md: 18px;
+    --font: "Outfit", ui-sans-serif, -apple-system, "SF Pro Display", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; background: #05070b; color: var(--ink);
-    font: 15px/1.4 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg); color: var(--ink);
+    font: 400 15px/1.4 var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
   video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   video.mirror { transform: scaleX(-1); }
+  /* darkens edges so the glass panels always sit on a calmer area of the frame */
   .vignette { position: fixed; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
-  .glass { background: var(--glass); backdrop-filter: blur(14px) saturate(1.2);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2); border: 1px solid var(--line); border-radius: 14px; }
+    background:
+      radial-gradient(ellipse at center, transparent 50%, rgba(2,3,8,.62) 100%),
+      linear-gradient(180deg, rgba(2,3,8,.42) 0, transparent 120px, transparent calc(100% - 170px), rgba(2,3,8,.5) 100%); }
+  .glass { background: var(--glass); backdrop-filter: blur(22px) saturate(1.35);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35); border: 1px solid var(--line); border-radius: var(--r-lg);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 40px rgba(0,0,0,.28); }
 
-  /* top bar */
-  .dash { color: var(--ink); text-decoration: none; }
-  .dash:hover { border-color: var(--accent); }
+  /* ---------------------------------------------------------------- top bar */
   .top { position: fixed; top: 18px; left: 18px; right: 18px; display: flex; gap: 10px; align-items: center; }
-  .brand { padding: 8px 14px; font-weight: 650; letter-spacing: .02em; }
-  .brand small { font-weight: 450; color: var(--dim); margin-left: 6px; }
-  .pill { padding: 8px 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5b6472; }
-  .pill.on { color: var(--ink); }
-  .pill.on .dot { background: var(--live); box-shadow: 0 0 0 0 rgba(255,93,93,.7); animation: pulse 1.4s infinite; }
-  @keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(255,93,93,0); } 100% { box-shadow: 0 0 0 0 rgba(255,93,93,0); } }
+  .brand { padding: 7px 18px 7px 8px; display: flex; align-items: center; gap: 10px; border-radius: 999px;
+    font-size: 20px; font-weight: 300; letter-spacing: .01em; }
+  .brand .mark { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    background: radial-gradient(circle at 35% 30%, #e6fff2, #7ef2c4 45%, #2f9c74); box-shadow: 0 0 18px rgba(126,242,196,.5); }
+  .brand .mark svg { width: 16px; height: 16px; }
+  .brand small { font-size: 13px; font-weight: 400; color: var(--quiet); }
+  .pill { padding: 9px 16px; display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--dim);
+    border-radius: 999px; transition: border-color .25s, color .25s; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #6b7380; flex: none; }
+  .pill.on { color: var(--ink); border-color: rgba(255,107,107,.55); }
+  .pill.on .dot { background: var(--live); box-shadow: 0 0 0 0 rgba(255,107,107,.7); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(255,107,107,0); } 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0); } }
   .spacer { flex: 1; }
-  select { background: transparent; color: var(--ink); border: 0; font: inherit; font-size: 13px; max-width: 220px; }
+  .dash { color: var(--ink); text-decoration: none; }
+  .dash:hover, .dash:focus-visible { border-color: var(--mint); box-shadow: 0 0 22px rgba(126,242,196,.25); outline: none; }
+  .ico { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+  select { background: transparent; color: var(--ink); border: 0; font: inherit; font-size: 14px; max-width: 220px; outline: none; }
   select option { color: #000; }
   .conn .dot { background: var(--mid); }
-  .conn.ok .dot { background: var(--good); }
+  .conn.ok .dot { background: var(--good); box-shadow: 0 0 10px rgba(143,240,181,.7); }
 
-  /* topic rail */
-  .rail { position: fixed; left: 18px; top: 50%; transform: translateY(-50%); padding: 10px; width: 210px; }
-  .topic { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; color: var(--dim); }
-  .topic .n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line);
-    display: grid; place-items: center; font-size: 12px; }
-  .topic .lvl { margin-left: auto; font-size: 12px; }
-  .topic.now { background: rgba(143,211,255,.14); color: var(--ink); }
-  .topic.now .n { border-color: var(--accent); color: var(--accent); }
-  .topic.done .n { background: var(--good); color: #0b1a10; border-color: transparent; }
-  .lvl.flag { color: var(--flag); } .lvl.mid { color: var(--mid); } .lvl.good { color: var(--good); }
-  .topic .cam { font-size: 12px; }
+  /* ---------------------------------------------------------------- topic rail */
+  .rail { position: fixed; left: 18px; top: 50%; transform: translateY(-58%); padding: 10px; width: 232px; }
+  .topic { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: var(--r-md);
+    color: var(--dim); font-size: 16px; font-weight: 400; text-transform: capitalize; border: 1px solid transparent; }
+  .topic + .topic { margin-top: 2px; }
+  .topic .n { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-hi); flex: none;
+    display: grid; place-items: center; font-size: 13px; font-weight: 300; }
+  .topic .lvl { margin-left: auto; font-size: 13px; text-transform: none; white-space: nowrap; color: var(--quiet); }
+  .topic.now { background: var(--mint-soft); border-color: rgba(126,242,196,.45); color: var(--ink); }
+  .topic.now .n { border-color: var(--mint); color: var(--mint); box-shadow: 0 0 12px rgba(126,242,196,.45); }
+  .topic.done { color: var(--ink); }
+  .topic.done .n { background: var(--mint); color: #062317; border-color: transparent; font-weight: 600; }
+  /* tone is carried by a glyph + the level word, not colour alone */
+  .lvl.good { color: var(--good); } .lvl.mid { color: var(--mid); }
+  .lvl.flag { color: var(--flag); padding: 1px 8px; border: 1px solid rgba(255,159,159,.55); border-radius: 999px; }
+  .lvl.good::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+  .lvl.mid::before { content: "◐ "; font-size: 10px; vertical-align: 1px; }
+  .lvl.flag::before { content: "! "; font-weight: 600; }
+  .topic .cam { display: inline-flex; color: var(--violet); }
 
-  /* cards */
-  .cards { position: fixed; right: 18px; top: 76px; bottom: 120px; width: 330px; display: flex;
+  /* ---------------------------------------------------------------- cards */
+  .cards { position: fixed; right: 18px; top: 82px; bottom: 172px; width: 320px; display: flex;
     flex-direction: column; gap: 10px; overflow: hidden; }
-  .card { padding: 12px 14px; animation: in .35s ease-out both; transition: opacity .25s, transform .25s; }
-  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .card h3 { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
-  .card.camera h3 { color: var(--mid); } .card.alert h3 { color: var(--flag); }
-  .card p { color: var(--ink); }
-  .card .meta { margin-top: 6px; font-size: 12px; color: var(--dim); }
+  .card { padding: 14px 18px 15px; border-radius: 22px; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); animation: in .35s ease-out both;
+    transition: opacity .25s, transform .25s, border-color .25s; flex: none; }
+  .card.sel { border-color: rgba(126,242,196,.7); box-shadow: inset 0 0 0 1px rgba(126,242,196,.35), inset 0 0 26px rgba(126,242,196,.12); }
+  .card h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--dim);
+    margin-bottom: 4px; }
+  .card h3::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
+  .card.camera h3::before { background: var(--violet); box-shadow: 0 0 10px var(--violet); }
+  .card.alert { border-color: rgba(255,159,159,.6); background: rgba(40,10,14,.7); }
+  .card.alert h3 { color: var(--flag); }
+  .card.alert h3::before { background: var(--flag); box-shadow: 0 0 10px var(--flag); }
+  .card p { color: var(--ink); font-size: 15px; font-weight: 400; line-height: 1.35; }
+  .card p.big { font-size: 30px; font-weight: 200; line-height: 1.1; letter-spacing: -.01em; }
+  .card .meta { margin-top: 7px; font-size: 13px; color: var(--quiet); }
   @keyframes in { from { opacity: 0; transform: translateX(16px); } }
 
-  /* wrist dial */
-  .dial { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 80vw);
-    padding: 18px 20px 20px; text-align: center; display: none; }
-  .dial.show { display: block; animation: in .3s ease-out both; }
-  .dial .q { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+  /* ---------------------------------------------------------------- wrist dial */
+  .dial { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(580px, calc(100vw - 720px)); min-width: 440px; padding: 20px 20px 18px; text-align: center; display: none;
+    border-radius: 30px; background: var(--glass-hi); }
+  .dial.show { display: block; animation: dialIn .3s ease-out both; }
+  @keyframes dialIn { from { opacity: 0; transform: translate(-50%, -46%); } }
+  .dial .q { color: var(--dim); font-size: 15px; margin-bottom: 14px; }
   .opts { display: flex; gap: 8px; }
-  .opt { flex: 1; padding: 12px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); transition: all .15s;
-    position: relative; overflow: hidden; }
+  .opt { flex: 1; padding: 16px 6px 17px; border-radius: 20px; border: 1px solid var(--line); color: var(--dim);
+    font-size: 26px; font-weight: 200; letter-spacing: -.01em; text-transform: capitalize;
+    transition: all .15s; position: relative; overflow: hidden; }
   .opt span { position: relative; }
-  .opt.fill::before { content: ""; position: absolute; inset: 0; background: rgba(143,211,255,.30);
+  .opt.fill::before { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(126,242,196,.18), rgba(126,242,196,.42));
     transform-origin: left; animation: fill var(--dwell) linear forwards; }
-  .opt.skip { flex: .75; border-style: dashed; font-size: 13px; }
-  .opt.chosen { border-color: #8fe3b0; color: var(--ink); background: rgba(143,227,176,.30); transform: scale(1.08); }
+  .opt.skip { flex: .72; border-style: dashed; font-size: 15px; font-weight: 400; text-transform: none; align-self: stretch;
+    display: grid; place-items: center; }
+  .opt.hot { border-color: var(--mint); color: var(--ink); background: var(--mint-soft); transform: scale(1.04);
+    box-shadow: 0 0 26px rgba(126,242,196,.28); font-weight: 300; }
+  .opt.chosen { border-color: var(--good); color: #fff; background: rgba(143,240,181,.34); transform: scale(1.08);
+    box-shadow: 0 0 34px rgba(143,240,181,.5); font-weight: 300; }
   @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  .opt.hot { border-color: var(--accent); color: var(--ink); background: rgba(143,211,255,.18); transform: scale(1.04); }
-  .dial .hint { margin-top: 12px; font-size: 12px; color: var(--dim); }
+  .dial .hint { margin-top: 14px; font-size: 13px; color: var(--quiet); }
 
-  /* captions */
-  .caps { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); width: min(760px, 92vw);
-    display: flex; flex-direction: column; gap: 6px; align-items: center; }
-  .cap { padding: 9px 14px; max-width: 100%; animation: in .25s ease-out both; }
-  .cap b { font-weight: 600; margin-right: 6px; color: var(--accent); }
-  .cap.you b { color: var(--good); }
+  /* ---------------------------------------------------------------- captions */
+  .caps { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); width: min(760px, calc(100vw - 540px));
+    min-width: 420px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .cap { padding: 11px 20px 12px; max-width: 100%; border-radius: 22px; font-size: 18px; font-weight: 300;
+    line-height: 1.35; animation: in .25s ease-out both; }
+  .cap b { font-size: 13px; font-weight: 500; margin-right: 10px; color: var(--violet); vertical-align: 1px; }
+  .cap.you b { color: var(--mint); }
 
-  /* wrist meter + shutter */
-  .wrist { position: fixed; left: 18px; bottom: 22px; padding: 10px 12px; font-size: 12px; color: var(--dim); width: 210px; }
-  .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); position: relative; margin: 6px 0 8px; }
-  .bar i { position: absolute; top: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); left: 50%; transform: translateX(-50%); transition: left .08s linear; }
+  /* ---------------------------------------------------------------- wrist meter + shutter */
+  .wrist { position: fixed; left: 18px; bottom: 22px; padding: 12px 16px 13px; font-size: 13px; color: var(--dim);
+    width: 232px; border-radius: 22px; }
+  .wrist .row { display: flex; justify-content: space-between; gap: 8px; }
+  .wrist #wristTxt { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bar { height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,.3), rgba(255,255,255,.08));
+    position: relative; margin: 10px 0 10px; }
+  .bar::after { content: ""; position: absolute; left: 50%; top: -4px; width: 1px; height: 10px; background: rgba(255,255,255,.35); }
+  .bar i { position: absolute; top: -5px; width: 12px; height: 12px; border-radius: 50%; background: var(--mint);
+    box-shadow: 0 0 12px var(--mint); left: 50%; transform: translateX(-50%); transition: left .08s linear; z-index: 1; }
+  .wrist .note { font-size: 13px; line-height: 1.3; color: var(--quiet); }
   .shutter { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
   .shutter.go { animation: flash .5s ease-out; }
   @keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
-  .start { position: fixed; inset: 0; display: grid; place-items: center; background: #05070b; z-index: 9; }
-  .start button { font: inherit; font-size: 16px; padding: 14px 22px; border-radius: 12px; border: 1px solid var(--line);
-    background: rgba(143,211,255,.16); color: var(--ink); cursor: pointer; }
-  .pick-title { font-size: 34px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); }
-  .pick-sub { color: var(--dim); margin: 6px 0 18px; font-size: 15px; }
-  .pick-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .start button.lang { min-width: 150px; font-size: 18px; }
-  .start button.lang:hover, .start button.lang:focus-visible { border-color: var(--accent); }
-  .start p { color: var(--dim); margin-top: 12px; font-size: 13px; text-align: center; }
 
-  /* Sprout: Tend's character (bottom-left, between the rail and the wrist meter) */
-  .sprout { position: fixed; left: 18px; bottom: 118px; width: 210px; display: flex; flex-direction: column;
-    align-items: center; gap: 6px; pointer-events: none; --glow: rgba(155,231,176,.38); }
-  .sp-fig { position: relative; width: 126px; height: 134px; transform-origin: 50% 100%; }
-  .sp-fig svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 16px var(--glow)); transition: filter .6s; }
+  /* ---------------------------------------------------------------- start / language screen */
+  .start { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; overflow: hidden;
+    background:
+      radial-gradient(ellipse 55% 45% at 50% 34%, rgba(126,242,196,.13), transparent 70%),
+      radial-gradient(ellipse 40% 35% at 62% 30%, rgba(184,162,255,.12), transparent 70%),
+      var(--bg); }
+  .hero { text-align: center; display: flex; flex-direction: column; align-items: center; position: relative; }
+  .orb { position: relative; width: 300px; height: 280px; display: grid; place-items: center; margin-bottom: -6px; }
+  .orb .halo { position: absolute; left: 50%; top: 54%; width: 270px; height: 270px; margin: -135px 0 0 -135px; border-radius: 50%;
+    background: conic-gradient(from 200deg, #7ef2c4, #8fd3ff, #b8a2ff, #ffb3d9, #ffe1a8, #7ef2c4);
+    filter: blur(46px); opacity: .55; animation: spin 18s linear infinite; }
+  .orb .glassball { position: absolute; left: 50%; top: 54%; width: 240px; height: 240px; margin: -120px 0 0 -120px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 26%, rgba(255,255,255,.22), rgba(255,255,255,.03) 42%, rgba(4,5,10,.25) 72%);
+    border: 1px solid rgba(255,255,255,.22);
+    box-shadow: inset 0 0 40px rgba(126,242,196,.18), inset 0 -18px 50px rgba(184,162,255,.22), 0 0 80px rgba(126,242,196,.18); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .start .sprout { position: relative; left: auto; bottom: auto; width: auto; --glow: rgba(126,242,196,.55); }
+  .start .sp-fig { width: 176px; height: 188px; }
+  .start .sp-label, .start .sp-think { display: none; }
+  .pick-title { font-size: clamp(84px, 11vw, 132px); font-weight: 200; letter-spacing: -.045em; line-height: .95; color: var(--ink); }
+  .tagline { margin-top: 14px; font-size: 13px; font-weight: 500; letter-spacing: .26em; text-transform: uppercase; color: var(--dim); }
+  .pick-sub { color: var(--quiet); margin: 30px 0 14px; font-size: 16px; font-weight: 300; }
+  .pick-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .start button.lang { font: inherit; font-size: 20px; font-weight: 300; min-width: 190px; padding: 15px 30px; border-radius: 999px;
+    border: 1px solid var(--line-hi); background: rgba(255,255,255,.03); color: var(--ink); cursor: pointer;
+    transition: border-color .2s, box-shadow .2s, background .2s; }
+  .start button.lang:hover, .start button.lang:focus-visible { border-color: var(--mint); background: var(--mint-soft);
+    box-shadow: 0 0 0 4px rgba(126,242,196,.12), 0 0 36px rgba(126,242,196,.35); outline: none; }
+  .start .keys { position: absolute; left: 0; right: 0; bottom: 22px; color: var(--quiet); font-size: 13px; text-align: center; line-height: 1.6; }
+  /* thin outlined stat tiles flanking the hero (wide screens only) */
+  .facts { position: absolute; top: 50%; left: 0; right: 0; transform: translateY(-50%); display: flex;
+    justify-content: space-between; padding: 0 clamp(28px, 5vw, 80px); pointer-events: none; }
+  .facts > div { display: flex; flex-direction: column; gap: 14px; }
+  .fact { width: 210px; padding: 16px 20px 18px; border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,.02); text-align: left; }
+  .fact b { display: block; font-size: 44px; font-weight: 200; letter-spacing: -.03em; line-height: 1; }
+  .fact span { display: block; margin-top: 8px; font-size: 13px; color: var(--quiet); line-height: 1.35; }
+  .fact.v b { color: var(--violet); } .fact.m b { color: var(--mint); }
+  @media (max-width: 1180px) { .facts { display: none; } }
+  @media (max-height: 760px) { .orb { transform: scale(.82); margin: -26px 0 -30px; } .pick-sub { margin-top: 22px; } }
+
+  /* ---------------------------------------------------------------- Sprout (bottom-left, between the rail and the wrist meter) */
+  .sprout { position: fixed; left: 18px; bottom: 130px; width: 232px; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; pointer-events: none; --glow: rgba(126,242,196,.42); }
+  .sp-fig { position: relative; width: 120px; height: 128px; transform-origin: 50% 100%; }
+  .sp-fig svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 18px var(--glow)); transition: filter .6s; }
   .sp-fig svg * { transform-box: fill-box; }
   .sp-lean { transform-origin: 50% 100%; transition: transform .5s cubic-bezier(.3,.7,.3,1); }
   .sp-leaf { transition: transform .45s cubic-bezier(.3,.7,.3,1); }
@@ -118,35 +200,37 @@
   .sp-soft { opacity: 0; }
   .sp-ring { opacity: 0; transform-origin: 50% 50%; }
   .sp-body-warm { opacity: 0; transition: opacity .6s; }
-  .sp-label { padding: 5px 14px; font-size: 14px; font-weight: 550; color: var(--dim); border-radius: 999px;
-    transition: color .3s, border-color .3s; white-space: nowrap; }
+  .sp-label { padding: 6px 16px 7px; font-size: 14px; font-weight: 400; color: var(--dim); border-radius: 999px;
+    display: flex; align-items: center; gap: 8px; transition: color .3s, border-color .3s; white-space: nowrap; }
+  .sp-label::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .9; }
   .sp-think { position: absolute; right: -30px; top: 6px; padding: 7px 9px; display: flex; gap: 5px;
     border-radius: 999px; opacity: 0; transform: scale(.7); transition: opacity .3s, transform .3s; }
   .sp-think::after { content: ""; position: absolute; left: 2px; bottom: -9px; width: 9px; height: 9px;
     border-radius: 50%; background: var(--glass); border: 1px solid var(--line); }
-  .sp-think i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: .3;
+  .sp-think i { width: 8px; height: 8px; border-radius: 50%; background: var(--violet); opacity: .3;
     animation: sp-dot 1.3s infinite ease-in-out; }
   .sp-think i:nth-child(2) { animation-delay: .2s; } .sp-think i:nth-child(3) { animation-delay: .4s; }
 
   .sprout.idle .sp-fig { animation: sp-breathe 4.2s ease-in-out infinite; }
-  .sprout.listening { --glow: rgba(155,231,176,.55); }
+  .sprout.listening { --glow: rgba(126,242,196,.62); }
   .sprout.listening .sp-lean { transform: rotate(6deg); }
   .sprout.listening .sp-leaf.l { transform: rotate(16deg); }
   .sprout.listening .sp-leaf.r { transform: rotate(-16deg); }
   .sprout.listening .sp-ring { animation: sp-ring 2.2s ease-out infinite; }
-  .sprout.listening .sp-label { color: var(--good); border-color: rgba(155,231,176,.5); }
+  .sprout.listening .sp-label { color: var(--mint); border-color: rgba(126,242,196,.55); }
+  .sprout.thinking { --glow: rgba(184,162,255,.5); }
   .sprout.thinking .sp-lean { animation: sp-sway 3.2s ease-in-out infinite; }
   .sprout.thinking .sp-eyes { transform: translate(3px, -4px); }
   .sprout.thinking .sp-think { opacity: 1; transform: none; }
-  .sprout.thinking .sp-label { color: var(--accent); border-color: rgba(143,211,255,.5); }
-  .sprout.speaking { --glow: rgba(143,211,255,.45); }
+  .sprout.thinking .sp-label { color: var(--violet); border-color: rgba(184,162,255,.55); }
+  .sprout.speaking { --glow: rgba(184,162,255,.55); }
   .sprout.speaking .sp-fig { animation: sp-bob .8s ease-in-out infinite; }
   .sprout.speaking .sp-smile { opacity: 0; }
   .sprout.speaking .sp-open { opacity: 1; animation: sp-talk .9s infinite; }
   .sprout.speaking .sp-leaf.l { animation: sp-leafl .8s ease-in-out infinite; }
   .sprout.speaking .sp-leaf.r { animation: sp-leafr .8s ease-in-out infinite; }
-  .sprout.speaking .sp-label { color: var(--accent); border-color: rgba(143,211,255,.5); }
-  .sprout.concern { --glow: rgba(255,200,120,.6); }
+  .sprout.speaking .sp-label { color: var(--violet); border-color: rgba(184,162,255,.55); }
+  .sprout.concern { --glow: rgba(255,200,120,.62); }
   .sprout.concern .sp-body-warm { opacity: 1; }
   .sprout.concern .sp-leaf.l { transform: rotate(-8deg); }
   .sprout.concern .sp-leaf.r { transform: rotate(8deg); }
@@ -154,7 +238,7 @@
   .sprout.concern .sp-eye { animation-duration: 7s; }
   .sprout.concern .sp-smile { opacity: 0; }
   .sprout.concern .sp-soft { opacity: 1; }
-  .sprout.concern .sp-label { color: var(--mid); border-color: rgba(255,217,138,.55); }
+  .sprout.concern .sp-label { color: var(--mid); border-color: rgba(255,213,138,.6); }
 
   @keyframes sp-breathe { 50% { transform: scale(1.035, 1.02); } }
   @keyframes sp-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
@@ -166,7 +250,10 @@
   @keyframes sp-leafl { 50% { transform: rotate(7deg); } }
   @keyframes sp-leafr { 50% { transform: rotate(-7deg); } }
   @keyframes sp-dot { 0%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-  @media (max-height: 720px) { .sprout { transform: scale(.8); transform-origin: 0 100%; } }
+  @media (max-height: 760px) {
+    .sprout:not(.hero-sprout) { transform: scale(.78); transform-origin: 0 100%; }
+    .rail { transform: translateY(-64%); } .topic { padding: 8px 12px; }
+  }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -176,11 +263,12 @@
 <div class="shutter" id="shutter"></div>
 
 <div class="top">
-  <div class="brand glass">Tend<small>daily check-in</small></div>
+  <div class="brand glass"><span class="mark"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14V7.5M8 8C6.5 5 4 4.2 2 4.6 2.6 7 5 8.4 8 8Zm0 0c1.5-3 4-3.8 6-3.4C13.4 7 11 8.4 8 8Z" fill="#0b3a27" stroke="#0b3a27" stroke-width="1" stroke-linejoin="round"/></svg></span>Tend<small>daily check-in</small></div>
   <div class="pill glass" id="listen"><span class="dot"></span><span id="listenTxt">idle</span></div>
   <div class="spacer"></div>
-  <a class="pill glass dash" href="/dashboard" target="_blank" rel="noopener" title="Clinician dashboard (new tab)">📋 Dashboard ↗</a>
-  <div class="pill glass"><span>📷</span><select id="camSel" title="Camera"></select></div>
+  <a class="pill glass dash" href="/dashboard" target="_blank" rel="noopener" title="Clinician dashboard (new tab)">
+    <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="6" rx="1.5"/><rect x="9" y="2" width="5" height="3.5" rx="1.5"/><rect x="2" y="10" width="5" height="4" rx="1.5"/><rect x="9" y="7.5" width="5" height="6.5" rx="1.5"/></svg>Dashboard ↗</a>
+  <div class="pill glass"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1.2-1.6h3.4L10.9 4h1.6A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/><circle cx="8" cy="8.4" r="2.4"/></svg><select id="camSel" title="Camera"></select></div>
   <div class="pill glass conn" id="conn"><span class="dot"></span><span id="connTxt">connecting</span></div>
 </div>
 
@@ -190,7 +278,7 @@
 <div class="dial glass" id="dial">
   <div class="q" id="dialQ">Tilt your wrist to choose</div>
   <div class="opts" id="opts"></div>
-  <div class="hint">tilt ↔ to choose · far left = skip · hold to confirm · double-tap = now · or just say it</div>
+  <div class="hint">Tilt to choose · far left skips · hold or double-tap to confirm · or just say it</div>
 </div>
 
 <div class="caps" id="caps"></div>
@@ -237,21 +325,33 @@
 </div>
 
 <div class="wrist glass">
-  wrist <span id="wristTxt">no band</span>
+  <div class="row"><span>Wrist</span><span id="wristTxt">no band</span></div>
   <div class="bar"><i id="rollDot"></i></div>
-  <div style="font-size:11px">images: sent only when you show something · never stored</div>
+  <div class="note">Images go out only when you show something, and are never stored.</div>
 </div>
 
 <div class="start" id="start">
-  <div style="text-align:center">
-    <div class="pick-title">Tend</div>
+  <div class="facts" aria-hidden="true">
+    <div>
+      <div class="fact m"><b>4</b><span>questions: sleep, mood, stress, appetite</span></div>
+      <div class="fact"><b>~2 min</b><span>from double-tap to summary card</span></div>
+    </div>
+    <div>
+      <div class="fact v"><b>3</b><span>ways to answer: say it, tilt it, show it</span></div>
+      <div class="fact"><b>0</b><span>recordings kept: the check-in never saves your voice</span></div>
+    </div>
+  </div>
+  <div class="hero">
+    <div class="orb"><div class="halo"></div><div class="glassball"></div><div id="heroSprout"></div></div>
+    <h1 class="pick-title">Tend</h1>
+    <div class="tagline">A daily check-in you can say, tilt, or show</div>
     <div class="pick-sub">Choose your language · Elige tu idioma</div>
     <div class="pick-row">
       <button class="lang" data-lang="en">English</button>
       <button class="lang" data-lang="es">Español</button>
     </div>
-    <p>Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · F flick (stop / done) · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
   </div>
+  <p class="keys">Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · F flick (stop / done) · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
 </div>
 
 <script>
@@ -262,6 +362,18 @@ const $ = id => document.getElementById(id);
 const video = $("cam");
 let ws = null, stream = null, state = { topic: null, topics: {}, shown: {} };
 let cards = [], selected = -1;
+
+// Start screen hero: the same Sprout drawing, scaled up (a decorative copy; the HUD's own #sprout is untouched)
+(() => {
+  const host = $("heroSprout"), fig = document.querySelector("#sprout .sp-fig");
+  if (!host || !fig) return;
+  const wrap = document.createElement("div");
+  wrap.className = "sprout idle hero-sprout";
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.appendChild(fig.cloneNode(true));
+  wrap.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));   // gradients resolve to the HUD's defs
+  host.appendChild(wrap);
+})();
 
 // ------------------------------------------------------------ camera
 async function listCameras() {
@@ -329,12 +441,14 @@ function handle(m) {
 }
 
 // ------------------------------------------------------------ rendering
+const CAM_ICON = '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4h1.6l1.2-1.6h3.4L10.9 4h1.6A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/><circle cx="8" cy="8.4" r="2.4"/></svg>';
+const cap1 = s => { s = String(s ?? ""); return s.charAt(0).toUpperCase() + s.slice(1); };
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function renderRail() {
   $("rail").innerHTML = TOPICS.map((t, i) => {
     const lvl = state.topics?.[t], done = lvl && lvl !== "not_discussed";
     const cls = ["topic", state.topic === t ? "now" : "", done ? "done" : ""].join(" ");
-    const cam = state.shown?.[t] ? '<span class="cam" title="photo attached">📷</span>' : "";
+    const cam = state.shown?.[t] ? `<span class="cam" title="photo attached">${CAM_ICON}</span>` : "";
     return `<div class="${cls}"><span class="n">${done ? "✓" : i + 1}</span>${t}${cam}
       <span class="lvl ${LEVEL_TONE[lvl] || ""}">${lvl ? esc(lvl.replaceAll("_", " ")) : ""}</span></div>`;
   }).join("");
@@ -359,8 +473,12 @@ function addCard(c) {
   renderCards();
 }
 function renderCards() {
-  $("cards").innerHTML = cards.map((c, i) => `<div class="card glass ${esc(c.kind || "info")} ${i === selected ? "sel" : ""}">
-      <h3>${esc(c.title)}</h3><p>${esc(c.body)}</p>${c.meta ? `<div class="meta">${esc(c.meta)}</div>` : ""}</div>`).join("");
+  // a one- or two-word answer (a level like "fair") gets the big thin numeral treatment
+  $("cards").innerHTML = cards.map((c, i) => {
+    const big = c.kind !== "alert" && String(c.body ?? "").length <= 22;
+    return `<div class="card glass ${esc(c.kind || "info")} ${i === selected ? "sel" : ""}">
+      <h3>${esc(cap1(c.title))}</h3><p class="${big ? "big" : ""}">${esc(cap1(c.body))}</p>${c.meta ? `<div class="meta">${esc(c.meta)}</div>` : ""}</div>`;
+  }).join("");
 }
 function moveSel(d) { if (!cards.length) return; selected = Math.max(0, Math.min(cards.length - 1, selected + d)); renderCards(); }
 function wrist(m) {
@@ -372,7 +490,7 @@ function dial(m) {
   clearTimeout(window._dialT);
   if (m.chosen != null) {                       // confirmed: flash the pick green, then hide
     const o = $("opts").children[m.chosen];
-    if (o) { o.className = "opt chosen"; o.firstChild.textContent = "✓ " + o.firstChild.textContent; }
+    if (o) { o.className = "opt chosen" + (o.classList.contains("skip") ? " skip" : ""); o.firstChild.textContent = "✓ " + o.firstChild.textContent; }
     window._dialT = setTimeout(() => d.classList.remove("show"), 700);
     return;
   }
