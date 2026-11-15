@@ -10,6 +10,7 @@ HUD tab: check-in state, cards, wrist pose. Bound to 127.0.0.1: nothing outside 
 """
 import asyncio
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -31,7 +32,9 @@ class HudServer:
         self._sticky: dict[str, dict] = {}   # last message of each type, replayed to a tab that (re)connects
         self._runner: web.AppRunner | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self.on_message = None               # async fn(dict): keyboard fallbacks from the HUD (show, dial, confirm)
+        self.on_message = None
+        self._recap_cache = None             # (history version, mp3 bytes)
+        self._recap_lock = asyncio.Lock()               # async fn(dict): keyboard fallbacks from the HUD (show, dial, confirm)
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self):
@@ -54,6 +57,7 @@ class HudServer:
         app.router.add_get("/dashboard", self._dashboard)
         app.router.add_get("/cards/{name}", self._card_file)
         app.router.add_get("/provenance.jsonl", self._provenance)
+        app.router.add_get("/recap.mp3", self._recap)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         await web.TCPSite(self._runner, self.host, self.port).start()
@@ -111,6 +115,52 @@ class HudServer:
         if not f.is_file():
             raise web.HTTPNotFound()
         return web.FileResponse(f, headers={"Cache-Control": "no-store"})
+
+    async def _recap(self, request):
+        """The 7-day overview read aloud in Tend's voice (ElevenLabs). Only the overview lines leave the Mac:
+        they are counts of reported levels, no names or quotes, and each is re-checked for diagnostic words.
+        One ElevenLabs call per history version (cached in memory), so repeated clicks cost nothing."""
+        hist_file = HERE / "cards" / "history.json"
+        if not hist_file.is_file():
+            return web.json_response({"error": "No check-in history yet."}, status=409)
+        hist = json.loads(hist_file.read_text())
+        version = hist.get("generated", "")
+        async with self._recap_lock:
+            if self._recap_cache and self._recap_cache[0] == version:
+                return web.Response(body=self._recap_cache[1], content_type="audio/mpeg",
+                                    headers={"Cache-Control": "no-store"})
+            import guardrails
+            lines = [l["text"] for l in hist.get("overview", {}).get("lines", [])
+                     if not guardrails._DIAG_RE.search(l.get("text", ""))]
+            n = len(hist.get("timeline", []))
+            text = (f"Here's a summary of the last {n} check-ins. " + " ".join(lines) if lines else
+                    f"There's nothing to flag across the last {n} check-ins.")
+            text += " These are patterns in what was reported, not a diagnosis."
+            if not os.getenv("ELEVENLABS_API_KEY"):
+                from dotenv import load_dotenv
+                load_dotenv(HERE / ".env")
+            key, voice = os.getenv("ELEVENLABS_API_KEY"), os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+            if not key:
+                return web.json_response({"error": "No ElevenLabs key in .env."}, status=503)
+            import aiohttp
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128"
+            audio, err = None, ""
+            async with aiohttp.ClientSession() as http:
+                for model in dict.fromkeys([os.getenv("ELEVENLABS_MODEL", "eleven_v4_turbo"), "eleven_flash_v2_5"]):
+                    async with http.post(url, json={"text": text, "model_id": model},
+                                         headers={"xi-api-key": key, "accept": "audio/mpeg"}) as r:
+                        if r.status == 200:
+                            audio = await r.read()
+                            break
+                        err = f"ElevenLabs {r.status} on {model}"
+                        logger.warning(f"recap: {err}")
+            if audio is None:
+                return web.json_response({"error": err or "ElevenLabs failed."}, status=502)
+            import guardrails as g
+            g.Provenance(HERE / "provenance.jsonl").log("dashboard->elevenlabs", "7-day overview text (counts only)",
+                                                        "ElevenLabs (cloud)", model=model)
+            self._recap_cache = (version, audio)
+            return web.Response(body=audio, content_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
     async def _ws(self, request):
         # Browsers don't apply same-origin rules to WebSockets: without this check any website open in
