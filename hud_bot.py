@@ -141,6 +141,8 @@ class Session:
         self._dwell_task = None
         self._last_move_on = 0.0
         self._avatar = None
+        self.interrupter = None                           # the band input processor (start of the pipeline)
+        self.flick_strategy = None
         self.lang = "en"
         self.lang_chosen: asyncio.Future = asyncio.get_event_loop().create_future()
         self.loop = None
@@ -258,6 +260,18 @@ class Session:
         await self.hud.send({"type": "card", "id": topic, "title": topic, "body": level.replace("_", " "),
                              "meta": "said by voice"}, sticky=False)
 
+    async def flick(self, source: str):
+        """Flick while the bot is talking = stop talking now. Otherwise = 'I'm done talking' (ends my turn)."""
+        if self._avatar == "speaking" and self.interrupter:
+            await self.interrupter.broadcast_interruption()   # cuts Gemini's reply, ElevenLabs and the speaker
+            logger.info(f"{source}: stopping the bot mid-sentence")
+            prov.log("wrist->bot", "flick: stop talking", "this Mac (pipeline)")
+            await self.hud.send({"type": "gesture", "text": "✋ stopped"}, sticky=False)
+            await self.avatar("idle")
+        elif self.flick_strategy and await self.flick_strategy.flick():
+            logger.info(f"{source}: ending your turn")
+            await self.hud.send({"type": "gesture", "text": "↯ done: answering"}, sticky=False)
+
     async def double_tap(self):
         """Double-tap: confirm the dial if one is showing; otherwise 'nothing to add, move on'
         (answers an open question without speech)."""
@@ -327,7 +341,9 @@ class Session:
 
     async def on_hud_message(self, msg: dict):
         kind = msg.get("type")
-        if kind == "begin":
+        if kind == "flick":                               # HUD key F: rehearse the flick without the band
+            await self.flick("HUD key F")
+        elif kind == "begin":
             lang = msg.get("lang")
             if lang in LANG_EXTRA and not self.lang_chosen.done():
                 self.lang_chosen.set_result(lang)
@@ -415,9 +431,7 @@ class HudBandInput(nk.VexoBandInput):
             asyncio.run_coroutine_threadsafe(coro, self._s.loop)
 
     async def _on_flick(self, spin: float):
-        if await self.flick_strategy.flick():
-            logger.info(f"Wrist flick ({spin:.0f}°/s): ending your turn")
-            await self._s.hud.send({"type": "gesture", "text": "↯ done: answering"}, sticky=False)
+        await self._s.flick(f"wrist flick ({spin:.0f}°/s)")
 
     def _on_motion(self, m):
         if self._gestures and self.flick_strategy and m.gx is not None:
@@ -645,7 +659,8 @@ async def main():
     from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
     from pipecat.turns.user_turn_strategies import StrategyMode, UserTurnStrategies, UserTurnStrategiesParams
     flick = FlickUserTurnStopStrategy()
-    band_in.flick_strategy = flick
+    band_in.flick_strategy = session.flick_strategy = flick
+    session.interrupter = band_in
     turns = UserTurnStrategies(start=nk.calm_turn_start(), stop=[flick, TurnAnalyzerUserTurnStopStrategy(
         turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
     aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(

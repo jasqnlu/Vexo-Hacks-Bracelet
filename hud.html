@@ -250,7 +250,7 @@
       <button class="lang" data-lang="en">English</button>
       <button class="lang" data-lang="es">Español</button>
     </div>
-    <p>Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
+    <p>Nothing speaks until you choose. Allow the camera when asked.<br>P show camera · F flick (stop / done) · ← → dial · Enter confirm · M mirror · C captions · S Sprout</p>
   </div>
 </div>
 
@@ -410,6 +410,7 @@ document.addEventListener("keydown", e => {
   // keyboard fallbacks for the band gestures (handy if the band acts up on stage)
   const send = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
   if (e.key === "p" || e.key === "P") send({ type: "show" });
+  if (e.key === "f" || e.key === "F") send({ type: "flick" });   // same as a wrist flick
   if (e.key === "ArrowLeft") send({ type: "dial_move", delta: -1 });
   if (e.key === "ArrowRight") send({ type: "dial_move", delta: 1 });
   if (e.key === "Enter") send({ type: "confirm" });
