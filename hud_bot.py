@@ -31,6 +31,7 @@ from neurokind_bot import HERE, KIT, SAMPLE_RATE, logger, prov
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,  # noqa: E402
                                    UserStartedSpeakingFrame, UserStoppedSpeakingFrame,
                                    Frame, LLMFullResponseEndFrame, LLMFullResponseStartFrame, LLMRunFrame, LLMTextFrame,
@@ -929,6 +930,8 @@ async def main():
     ap.add_argument("--lang", choices=["ask", "en", "es"], default="ask",
                     help="check-in language; 'ask' = pick it on the HUD start screen (nothing speaks until then)")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--pause", type=float, default=0.8,
+                    help="seconds of silence before Tend checks whether you're done talking (Pipecat default 0.2)")
     ap.add_argument("--turn-silence", type=float, default=1.5,
                     help="max seconds of silence before the bot answers (Pipecat default 3)")
     ap.add_argument("--flick-dps", type=float, default=350,
@@ -1043,7 +1046,9 @@ async def main():
         turns = UserTurnStrategies(start=nk.calm_turn_start(), stop=[flick, TurnAnalyzerUserTurnStopStrategy(
             turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams(stop_secs=a.turn_silence)))])
     aggs = LLMContextAggregatorPair(context, user_params=LLMUserAggregatorParams(
-        vad_analyzer=SileroVADAnalyzer(), user_turn_strategies=turns,
+        # stop_secs: silence needed before Tend even considers the turn over. Pipecat's 0.2 s cut people off
+        # at normal thinking pauses ("I slept okay... but then"); --pause 0.8 lets them finish.
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=a.pause)), user_turn_strategies=turns,
         user_mute_strategies=[nk.MuteWhileBotSpeaks()],    # no self-interruptions from the speakers / room
         # Pipecat's default needs EVERY stop strategy to agree; we want whichever decides first (flick or silence).
         user_turn_strategies_params=UserTurnStrategiesParams(stop_mode=StrategyMode.FIRST)))
