@@ -145,6 +145,19 @@
   .chip::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--high); }
   .disclaim { margin-top:14px; font-size:14px; color:#4f5a51; }
 
+  /* ---------- questions for the next visit ---------- */
+  .vq-head { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  .vq-head h2 { margin:0; }
+  .vq-head .lead { font-size:14px; color:var(--muted); margin-top:2px; }
+  #vqList { list-style:none; margin:16px 0 0; padding:0; display:grid; gap:10px; }
+  #vqList li { display:flex; gap:14px; align-items:flex-start; padding:14px 18px; border-radius:22px; font-size:16px;
+               color:var(--ink-2); background:linear-gradient(160deg, rgba(255,255,255,.75), rgba(223,232,214,.7)); }
+  #vqList li::before { counter-increment:vq; content:counter(vq); flex:none; width:26px; height:26px; border-radius:50%;
+                       background:var(--pill-dark); color:#f4f6f2; font-size:13px; font-weight:500; display:grid; place-items:center; }
+  #vqList { counter-reset:vq; }
+  .vq-cap { margin-top:10px; font-size:13px; color:var(--muted); }
+  .vq-msg { color:#7b2219; font-size:14px; margin-top:12px; }
+
   /* ---------- timeline ---------- */
   .card { margin-top:22px; border-radius:32px; padding:22px 26px; background:var(--surface);
           border:1px solid rgba(255,255,255,.85); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
@@ -241,6 +254,14 @@
       <div class="disclaim">Patterns in what the wearer reported. Not a diagnosis.</div></div></aside>
   </div>
 
+  <section class="card" id="vqbox" style="display:none">
+    <div class="vq-head"><div><h2>Questions for the next visit</h2>
+      <div class="lead">Conversation starters from what was reported. Not a diagnosis.</div></div>
+      <button class="btn" id="vqBtn" type="button">✦ Suggest questions</button></div>
+    <ol id="vqList" hidden></ol>
+    <div class="vq-cap" id="vqCap" hidden></div>
+    <div class="vq-msg" id="vqMsg" hidden></div></section>
+
   <section class="card" id="tlbox" style="display:none"><h2>Check-in timeline</h2><div class="tl" id="tl"></div>
     <div class="legend"><span><i style="background:var(--low-soft);box-shadow:inset 0 0 0 1px rgba(63,138,99,.3)"></i>Good</span>
       <span><i style="background:var(--med-soft);box-shadow:inset 0 0 0 1px rgba(181,133,42,.35)"></i>In between</span>
@@ -318,6 +339,7 @@ function renderHistory(h) {
   document.getElementById("stDays").textContent = tl.length;
   if ((ov.lines||[]).length) {
     document.getElementById("ovbox").style.display = "";
+    document.getElementById("vqbox").style.display = "";
     document.getElementById("ovtitle").textContent = `Last ${ov.window} check-ins`;
     document.getElementById("ov").innerHTML = ov.lines.map(l => {
       const col = COLORS[l.domain] || ((ov.ask_about||[]).includes(l.domain) ? "var(--high)" : "var(--med)");
@@ -455,6 +477,28 @@ recapBtn.addEventListener("click", async () => {
   } catch (e) {
     stopRecap(); setRecap("error", "Can't reach the recap. Is the HUD server running?");
   }
+});
+
+// ---- Questions for the next visit (Gemini via hud_server, checked by the safety gate) ----
+const vqBtn = document.getElementById("vqBtn"), vqList = document.getElementById("vqList"),
+      vqCap = document.getElementById("vqCap"), vqMsg = document.getElementById("vqMsg");
+vqBtn.addEventListener("click", async () => {
+  if (vqBtn.classList.contains("busy")) return;
+  vqBtn.textContent = "Thinking…"; vqBtn.classList.add("busy"); vqMsg.hidden = true;
+  let msg = "";
+  try {
+    const r = await fetch("visit_questions.json?" + Date.now());
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (r.ok && j && (j.questions || []).length) {
+      vqList.innerHTML = j.questions.map(q => `<li><span>${esc(q)}</span></li>`).join("");
+      vqList.hidden = false;
+      vqCap.textContent = "Written by Gemini · checked by the safety gate" + (j.rewrites > 0 ? ` (rewritten ${j.rewrites}×)` : "");
+      vqCap.hidden = false;
+    } else msg = r.status === 404 ? "Questions need the HUD server." : (j && j.error ? String(j.error).slice(0, 90) : `Failed (HTTP ${r.status}).`);
+  } catch (e) { msg = "Can't reach the HUD server."; }
+  vqBtn.classList.remove("busy");
+  vqBtn.textContent = vqList.hidden ? "✦ Suggest questions" : "✦ Refresh";
+  if (msg) { vqMsg.textContent = msg; vqMsg.hidden = false; }
 });
 
 tick(); setInterval(tick, 3000);

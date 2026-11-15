@@ -35,6 +35,8 @@ class HudServer:
         self.on_message = None
         self._recap_cache = None             # (history version, mp3 bytes)
         self._recap_lock = asyncio.Lock()               # async fn(dict): keyboard fallbacks from the HUD (show, dial, confirm)
+        self._vq_cache = None                # (history version, response dict)
+        self._vq_lock = asyncio.Lock()
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self):
@@ -59,6 +61,7 @@ class HudServer:
         app.router.add_get("/provenance.jsonl", self._provenance)
         app.router.add_get("/recap.mp3", self._recap)
         app.router.add_get("/sounds/{name}", self._sound)
+        app.router.add_get("/visit_questions.json", self._visit_questions)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         await web.TCPSite(self._runner, self.host, self.port).start()
@@ -171,6 +174,40 @@ class HudServer:
             self._recap_cache = (version, audio)
             return web.Response(body=audio, content_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
+    async def _visit_questions(self, request):
+        """2-3 open questions a clinician could ask at the next visit, written by Gemini from the 7-day
+        reported patterns only (overview counts + timeline levels + neutral paraphrases; no quotes, no names).
+        Every question goes through the diagnostic-language gate; failures go back to Gemini with the exact
+        phrases (max 2 rewrite rounds), and anything still failing is dropped. Cached per history version."""
+        hist_file = HERE / "cards" / "history.json"
+        if not hist_file.is_file():
+            return web.json_response({"error": "No check-in history yet."}, status=409)
+        hist = json.loads(hist_file.read_text())
+        version = hist.get("generated", "")
+        async with self._vq_lock:
+            if self._vq_cache and self._vq_cache[0] == version:
+                return web.json_response({**self._vq_cache[1], "cached": True}, headers={"Cache-Control": "no-store"})
+            if not os.getenv("GOOGLE_API_KEY"):
+                from dotenv import load_dotenv
+                load_dotenv(HERE / ".env")
+            key = os.getenv("GOOGLE_API_KEY")
+            if not key:
+                return web.json_response({"error": "No Google key in .env."}, status=503)
+            model = os.getenv("GEMINI_MODEL") or "gemini-4-hydrogen"
+            try:
+                questions, rewrites = await _gemini_visit_questions(key, model, _visit_input(hist))
+            except Exception as e:                           # noqa: BLE001  network / quota / bad JSON
+                logger.warning(f"visit questions: Gemini failed: {type(e).__name__}")
+                return web.json_response({"error": "Gemini could not write questions right now."}, status=502)
+            if not questions:
+                return web.json_response({"error": "No question passed the safety gate."}, status=502)
+            import guardrails as g
+            g.Provenance(HERE / "provenance.jsonl").log("dashboard->gemini", "7-day reported patterns (no quotes/names)",
+                                                        "Gemini (Google)", rewrites=rewrites)
+            out = {"questions": questions, "rewrites": rewrites, "model": model}
+            self._vq_cache = (version, out)
+            return web.json_response({**out, "cached": False}, headers={"Cache-Control": "no-store"})
+
     async def _ws(self, request):
         # Browsers don't apply same-origin rules to WebSockets: without this check any website open in
         # the browser could read the check-in or inject camera frames. Browsers always send Origin;
@@ -207,6 +244,76 @@ class HudServer:
 
 
 # ---------------------------------------------------------------- standalone test
+# ---------------------------------------------------------------- visit questions (Gemini + gate)
+_VQ_SYSTEM = (
+    "You help a clinician prepare for a visit. From the self-reported check-in patterns you are given, write "
+    "2 or 3 short, open, warm questions the clinician could ask the person at the next visit. Each question must "
+    "be grounded in one specific reported pattern, e.g. \"You mentioned eating less than usual on several days; "
+    "what's been going on with meals?\". Rules: never name or hint at a condition or disorder, never suggest a "
+    "cause, never give advice or recommendations, no clinical jargon, no names. Under 30 words each. "
+    "Reply with a JSON array of strings only.")
+
+
+def _visit_input(hist: dict) -> str:
+    """The ONLY text sent to Gemini: overview counts, last 7 timeline levels, latest neutral paraphrases.
+    No quotes, no names; every line is re-checked for diagnostic words."""
+    import guardrails
+    ok = lambda s: s and not guardrails._DIAG_RE.search(s)
+    lines = [l["text"] for l in hist.get("overview", {}).get("lines", []) if ok(l.get("text", ""))]
+    days = [{d: c.get(d) for d in ("sleep", "mood", "stress", "appetite")} | {"followup": bool(c.get("followup"))}
+            for c in hist.get("timeline", [])[-7:]]
+    reported = {}
+    latest = HERE / "cards" / "latest.json"
+    if latest.is_file():
+        try:
+            card = json.loads(latest.read_text())
+            for d in ("sleep", "mood", "stress", "appetite"):
+                r = (card.get(d) or {}).get("reported", "")
+                if ok(r):
+                    reported[d] = guardrails.redact(r)[0]    # belt and braces: paraphrases are already redacted
+        except (ValueError, OSError):
+            pass
+    return json.dumps({"overview": lines, "last_7_checkins_oldest_first": days,
+                       "latest_checkin_reported": reported}, indent=1)
+
+
+def _gate_questions(questions):
+    """[(question, [offending phrases])] for each question the diagnostic-language gate flags."""
+    import guardrails
+    return [(q, sorted({m.group(0) for m in guardrails._DIAG_RE.finditer(q)}))
+            for q in questions if guardrails._DIAG_RE.search(q)]
+
+
+def _parse_questions(text: str):
+    data = json.loads(text)
+    if isinstance(data, dict):
+        data = data.get("questions", [])
+    return [str(q).strip() for q in data if isinstance(q, str) and q.strip()][:3]
+
+
+async def _gemini_visit_questions(key: str, model: str, facts: str, max_rewrites: int = 2):
+    """(questions that passed the gate, number of rewrite rounds)."""
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    cfg = types.GenerateContentConfig(system_instruction=_VQ_SYSTEM, max_output_tokens=2048,
+                                      response_mime_type="application/json",
+                                      thinking_config=types.ThinkingConfig(thinking_level="low"))
+    r = await client.aio.models.generate_content(model=model, contents="Reported patterns:\n" + facts, config=cfg)
+    questions, rewrites = _parse_questions(r.text or "[]"), 0
+    while (bad := _gate_questions(questions)) and rewrites < max_rewrites:
+        rewrites += 1
+        fix = "\n".join(f"- \"{q}\" contains: {', '.join(p)}" for q, p in bad)
+        prompt = ("Reported patterns:\n" + facts + "\n\nYour questions were:\n" + json.dumps(questions) +
+                  "\n\nThe safety gate blocked these because they use diagnostic or clinical language:\n" + fix +
+                  "\nRewrite ONLY in plain everyday words about what was reported. Return the full JSON array "
+                  "of 2-3 questions.")
+        r = await client.aio.models.generate_content(model=model, contents=prompt, config=cfg)
+        questions = _parse_questions(r.text or "[]")
+    still_bad = {q for q, _ in _gate_questions(questions)}
+    return [q for q in questions if q not in still_bad], rewrites
+
+
 async def _demo():
     hud = HudServer()
     await hud.start()
