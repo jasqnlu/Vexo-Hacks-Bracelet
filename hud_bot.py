@@ -143,6 +143,8 @@ them "tell me more" (say it or type it) on its own; a message will tell you what
 A message starting "(Typed by the wearer" is the wearer's own words, typed instead of spoken: treat it exactly
 like speech (it can be quoted on the card). After they say or type more about a topic, acknowledge it warmly in
 one short sentence, then go to the next topic.
+Keep every reply short: at most two sentences, ending with exactly ONE question. Never ask about two
+topics in one reply; wait for the answer first.
 If a message says the wearer double-tapped to move on, they have nothing to add: go to the next step.
 When you ask "anything else?", add "or double-tap if that's all"."""
 
@@ -736,6 +738,42 @@ class AvatarState(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+class OneQuestion(FrameProcessor):
+    """Between Gemini and the voice: a reply ends at its first question mark. Gemini sometimes bundles
+    several questions into one reply despite the prompt; the rest is dropped before it's spoken (and before
+    it reaches the context, so the conversation history matches what the wearer heard). Never cuts a reply
+    that mentions 988 / crisis support: that message is said in full."""
+
+    SAFETY = re.compile(r"\b988\b|crisis|lifeline|emergenc|emergencia", re.I)
+
+    def __init__(self):
+        super().__init__()
+        self._done, self._text, self._logged = False, "", False
+
+    def _trimmed(self):
+        if not self._logged:                              # once per reply
+            self._logged = True
+            logger.info("Tend reply trimmed to one question")
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMFullResponseStartFrame):
+            self._done, self._text, self._logged = False, "", False
+        elif isinstance(frame, LLMTextFrame) and direction == FrameDirection.DOWNSTREAM:
+            self._text += frame.text
+            if self._done and not self.SAFETY.search(self._text):
+                if frame.text.strip():
+                    self._trimmed()
+                return                                    # past the first question: not spoken
+            if not self._done and "?" in frame.text and not self.SAFETY.search(self._text):
+                cut = frame.text.index("?") + 1
+                self._done = True
+                if frame.text[cut:].strip():
+                    frame = LLMTextFrame(frame.text[:cut])
+                    self._trimmed()
+        await self.push_frame(frame, direction)
+
+
 class BotCaptions(FrameProcessor):
     """After the LLM: collects each reply and sends it to the HUD as one caption."""
 
@@ -835,7 +873,7 @@ def make_submit(session: Session):
 # ------------------------------------------------------------------ main
 # The run log file keeps only these messages (timing and events, never what anyone said). Anything else,
 # including every Pipecat line, stays on the terminal only.
-_LOG_FILE_OK = ("Tend reply #", "Language:", "Connected to", "Card saved", "--max-minutes", "HUD tab",
+_LOG_FILE_OK = ("Tend reply #", "Tend reply trimmed", "Language:", "Connected to", "Card saved", "--max-minutes", "HUD tab",
                 "wrist flick", "HUD key", "wearer still talking", "wrist/typed answer rides", "Stillness nudge",
                 "Stretch #", "Safety gate BLOCKED:", "Open http")
 
@@ -981,7 +1019,7 @@ async def main():
         user_turn_strategies_params=UserTurnStrategiesParams(stop_mode=StrategyMode.FIRST)))
 
     procs = [band_in, stt, nk.Redactor(stt_dest), CameraAndCaptions(session), aggs.user(), llm,
-             BotCaptions(session), tts]
+             OneQuestion(), BotCaptions(session), tts]
     if not a.no_speaker:
         from pipecat.transports.local.audio import LocalAudioTransport, LocalAudioTransportParams
         procs.append(LocalAudioTransport(LocalAudioTransportParams(audio_out_enabled=True)).output())
