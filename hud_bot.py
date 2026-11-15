@@ -33,7 +33,7 @@ from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame,  # noqa: E402
                                    UserStartedSpeakingFrame, UserStoppedSpeakingFrame,
-                                   Frame, LLMFullResponseEndFrame, LLMRunFrame, LLMTextFrame,
+                                   Frame, LLMFullResponseEndFrame, LLMFullResponseStartFrame, LLMRunFrame, LLMTextFrame,
                                    TranscriptionFrame)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -156,6 +156,11 @@ class Session:
         self.dwell = dwell                                # seconds to hold a tilt before it confirms (0 = off)
         self.dial_armed = False                           # dwell counts only after the wrist has moved once
         self._dwell_task = None
+        self.user_talking = False                         # wearer mid-sentence: the dial pauses (voice wins)
+        self.bot_talking = False                          # Tend's audio is playing
+        self.llm_busy = False                             # Gemini is writing a reply
+        self.user_turns = 0                               # counts spoken turns (see run_llm)
+        self._user_stopped_at = 0.0
         self.menu = None                                  # None = topic dial, "more" = the tell-me-more menu
         self.more_for = None                              # (topic, level) the menu is about
         self.typing = False                               # the HUD's text box is open
@@ -201,6 +206,7 @@ class Session:
                  else f"{self.topic.capitalize()}: tilt to choose")
             await self.hud.send({"type": "dial", "active": self.dial_on, "topic": self.topic,
                                  "options": self.options(), "index": self.dial_index, "menu": self.menu,
+                                 "paused": self.user_talking,
                                  "dwell": self.dwell if (self.dial_armed and self.dial_on) else 0,
                                  "question": q})
 
@@ -211,6 +217,11 @@ class Session:
         if not hits:
             return
         new = max(hits)[1]
+        if (new == self.topic and new not in self.levels and not self.dial_on and self.menu is None
+                and not self.typing):
+            self.dial_index, self.dial_on, self.dial_armed, self.roll_zero = REST, True, False, None
+            await self.push_dial()                        # asked again after a spoken non-answer
+            return
         if new != self.topic and new not in self.levels:
             if self.topic and self.topic not in self.levels:
                 self.levels[self.topic] = "said"          # answered by voice; the level arrives with the summary
@@ -224,10 +235,47 @@ class Session:
             await self.push_state()
             await self.push_dial()
 
+    # -------------------------------------------------------------- one reply at a time
+    async def speaking(self, who: str, on: bool):
+        """Turn events from the pipeline. While the wearer talks the dial pauses (no hold, no confirm):
+        otherwise a hand moving mid-sentence could confirm an answer AND the speech gets its own reply."""
+        if who == "bot":
+            self.bot_talking = on
+            if on:
+                self.user_talking = False                 # muted while Tend talks: no turn can be open
+            else:
+                self.llm_busy = False                     # safety net if an interrupted reply never "ended"
+            return
+        self.user_talking = on
+        if on:
+            self.user_turns += 1
+            self._cancel_dwell()
+        else:
+            self._user_stopped_at = time.time()
+        if self.dial_on:
+            await self.push_dial()
+
+    async def run_llm(self):
+        asyncio.create_task(self._run_llm())              # don't hold up the HUD / band handlers while waiting
+
+    async def _run_llm(self):
+        """Ask Gemini for the next reply after a wrist/typed/camera answer, without talking over anything:
+        wait until Tend is done talking and the wearer isn't mid-sentence. If the wearer spoke meanwhile,
+        their spoken turn already sends our note to Gemini, so don't start a second reply."""
+        turns, deadline = self.user_turns, time.time() + 12
+        while time.time() < deadline and (self.bot_talking or self.llm_busy or self.user_talking
+                                          or time.time() - self._user_stopped_at < 0.8):
+            await asyncio.sleep(0.1)
+        if self.user_turns != turns:
+            logger.info("wrist/typed answer rides along with the wearer's spoken turn (no second reply)")
+            return
+        await self.avatar("thinking")
+        await self.task.queue_frames([LLMRunFrame()])
+
     # -------------------------------------------------------------- wrist dial
     def on_roll(self, roll: float):                       # band thread
         self.last_roll = roll
-        if not self.dial_on or self.loop is None:
+        if not self.dial_on or self.loop is None or self.user_talking:
             return
         if self.roll_zero is None:                        # however the wrist rests when the dial appears = middle
             self.roll_zero = roll
@@ -246,7 +294,7 @@ class Session:
         return sum(r > (e + HYST if c <= k else e - HYST) for k, e in enumerate(edges))
 
     async def set_index(self, idx: int):
-        if not self.dial_on or idx == self.dial_index:
+        if not self.dial_on or idx == self.dial_index or self.user_talking:
             return
         self.dial_index, self.dial_armed = idx, True
         self._cancel_dwell()
@@ -275,6 +323,10 @@ class Session:
         ("not good") are skipped rather than guessed."""
         if self.menu == "more" and text.strip():         # they chose to just say it: the menu isn't needed
             self._close_more()
+            await self.push_dial()
+        elif self.dial_on and self.menu is None and len(text.split()) >= 2:
+            self._cancel_dwell()                          # answering by voice: voice wins, the dial goes away
+            self.dial_on = self.dial_armed = False        # (bot_said brings it back if Tend asks again)
             await self.push_dial()
         named = [(m.start(), t) for t, rx in TOPIC_RE.items() for m in re.finditer(rx, text, re.I)]
         topic = max(named)[1] if named else self.topic
@@ -321,11 +373,10 @@ class Session:
         prov.log("wrist->llm", "double-tap: nothing to add", "Gemini (Google)")
         await self.hud.send({"type": "gesture", "text": "✓ nothing to add"}, sticky=False)
         self.context.add_message({"role": "user", "content": "(The wearer double-tapped to move on: nothing to add.)"})
-        await self.avatar("thinking")
-        await self.task.queue_frames([LLMRunFrame()])
+        await self.run_llm()
 
     async def confirm_dial(self, how: str = "double-tap"):
-        if not (self.dial_on and self.topic and self.task):
+        if not (self.dial_on and self.topic and self.task) or self.user_talking:
             return
         self._cancel_dwell()
         if self.menu == "more":
@@ -346,8 +397,7 @@ class Session:
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
         if not skipped and level in guardrails.WATCH.get(topic, ()):
             return await self._offer_more(topic, level)   # worth asking about: let them say or type more
-        await self.avatar("thinking")
-        await self.task.queue_frames([LLMRunFrame()])
+        await self.run_llm()
 
     # -------------------------------------------------------------- tell me more (say it / type it)
     async def _offer_more(self, topic: str, level: str):
@@ -389,8 +439,7 @@ class Session:
                 f"I'm listening.\" Don't ask a new question yet.)" if choice == "say_it" else
                 f"(The wearer chose not to add more about {topic}. Go on.)")
         self.context.add_message({"role": "user", "content": note})
-        await self.avatar("thinking")
-        await self.task.queue_frames([LLMRunFrame()])
+        await self.run_llm()
 
     async def typed(self, text: str, topic: str | None = None):
         """Text the wearer typed on the HUD: same redaction and provenance as speech, then to Gemini."""
@@ -409,8 +458,7 @@ class Session:
             await self.heard(clean)
             about = f" about {topic}" if topic in TOPICS else ""
             self.context.add_message({"role": "user", "content": f"(Typed by the wearer{about}:) {clean}"})
-        await self.avatar("thinking")
-        await self.task.queue_frames([LLMRunFrame()])
+        await self.run_llm()
 
     # -------------------------------------------------------------- camera
     async def attach_frame(self, reason: str) -> bool:
@@ -441,8 +489,7 @@ class Session:
         """Tap / P key: attach a frame and let the bot respond to it right away."""
         if self.task and await self.attach_frame(reason):
             self.context.add_message({"role": "user", "content": "(The wearer is showing you this.)"})
-            await self.avatar("thinking")
-            await self.task.queue_frames([LLMRunFrame()])
+            await self.run_llm()
 
     async def on_hud_message(self, msg: dict):
         kind = msg.get("type")
@@ -672,6 +719,8 @@ class AvatarState(FrameProcessor):
         await super().process_frame(frame, direction)
         state = self.STATES.get(type(frame))
         if state:
+            who = "bot" if isinstance(frame, (BotStartedSpeakingFrame, BotStoppedSpeakingFrame)) else "user"
+            await self._s.speaking(who, isinstance(frame, (UserStartedSpeakingFrame, BotStartedSpeakingFrame)))
             await self._s.avatar(state)
         await self.push_frame(frame, direction)
 
@@ -685,9 +734,13 @@ class BotCaptions(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
-        if isinstance(frame, LLMTextFrame):
+        if isinstance(frame, LLMFullResponseStartFrame):
+            self._s.llm_busy = True
+        elif isinstance(frame, LLMTextFrame):
             self._buf.append(frame.text)
-        elif isinstance(frame, LLMFullResponseEndFrame) and self._buf:
+        if isinstance(frame, LLMFullResponseEndFrame):
+            self._s.llm_busy = False
+        if isinstance(frame, LLMFullResponseEndFrame) and self._buf:
             text, self._buf = "".join(self._buf).strip(), []
             if text:
                 await self._s.bot_said(text)

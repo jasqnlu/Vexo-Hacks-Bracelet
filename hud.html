@@ -101,6 +101,8 @@
     width: min(580px, calc(100vw - 720px)); min-width: 440px; padding: 20px 20px 18px; text-align: center; display: none;
     border-radius: 30px; background: var(--glass-hi); }
   .dial.show { display: block; animation: dialIn .3s ease-out both; }
+  .dial.paused .opts { opacity: .35; filter: saturate(.4); transition: opacity .2s; }
+  .dial.paused .opt.fill::before { animation: none; transform: scaleX(0); }
   @keyframes dialIn { from { opacity: 0; transform: translate(-50%, -46%); } }
   .dial .q { color: var(--dim); font-size: 15px; margin-bottom: 14px; }
   /* typed answer ("tell me more" → type it) */
@@ -484,7 +486,9 @@ function handle(m) {
   else if (m.type === "caption") caption(m.who, m.text);
   else if (m.type === "card") { if (m.id === "streak") sfx("streak"); addCard(m); }
   else if (m.type === "wrist") wrist(m);
-  else if (m.type === "dial") { dial(m); if (m.active) $("dialHint").textContent = m.menu === "more"
+  else if (m.type === "dial") { dial(m); if (m.active) $("dialHint").textContent = m.paused
+      ? "Listening… the dial waits while you talk"
+      : m.menu === "more"
       ? "Tilt left to say it · right to type it · double-tap for no thanks"
       : "Tilt to choose · far left skips · hold or double-tap to confirm · or just say it"; }
   else if (m.type === "typebox") typebox(m);
@@ -557,6 +561,7 @@ function dial(m) {
     return;
   }
   d.classList.toggle("show", !!m.active);
+  d.classList.toggle("paused", !!m.paused);
   if (!m.active) return;
   lastDialOpts = m.options || [];
   $("dialQ").textContent = m.question || `How was your ${m.topic}?`;
