@@ -58,6 +58,7 @@ class HudServer:
         app.router.add_get("/cards/{name}", self._card_file)
         app.router.add_get("/provenance.jsonl", self._provenance)
         app.router.add_get("/recap.mp3", self._recap)
+        app.router.add_get("/sounds/{name}", self._sound)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         await web.TCPSite(self._runner, self.host, self.port).start()
@@ -115,6 +116,14 @@ class HudServer:
         if not f.is_file():
             raise web.HTTPNotFound()
         return web.FileResponse(f, headers={"Cache-Control": "no-store"})
+
+    async def _sound(self, request):
+        """HUD sound effects (sounds/<name>.mp3, made once with ElevenLabs). Only that folder, only .mp3."""
+        name = request.match_info["name"]
+        f = HERE / "sounds" / name
+        if not re.fullmatch(r"[a-z0-9_-]{1,40}\.mp3", name) or not f.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(f, headers={"Cache-Control": "max-age=3600"})
 
     async def _recap(self, request):
         """The 7-day overview read aloud in Tend's voice (ElevenLabs). Only the overview lines leave the Mac:
