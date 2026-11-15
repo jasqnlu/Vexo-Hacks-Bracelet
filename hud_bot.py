@@ -63,7 +63,7 @@ def dial_options(topic: str) -> list[str]:
 MORE = ["say_it", "no_thanks", "type_it"]
 MORE_REST = 1
 MORE_EDGES = (-14.0, 14.0)
-MORE_TIMEOUT = 15.0                             # nothing chosen and nothing typed: carry on as "no thanks"
+MORE_TIMEOUT = 10.0                             # nothing chosen and nothing typed: carry on as "no thanks"
 TOPIC_RE = {"sleep": r"\b(sleep|slept|rest(ed)?|dormi\w*|duerm\w*|sueño|descans\w*)\b",
             "mood": r"\b(mood|feeling|ánimo|animo|sientes|humor)\b",
             "stress": r"\b(stress(ed|ful)?|estr[eé]s\w*)\b",
@@ -145,6 +145,8 @@ like speech (it can be quoted on the card). After they say or type more about a 
 one short sentence, then go to the next topic.
 Keep every reply short: at most two sentences, ending with exactly ONE question. Never ask about two
 topics in one reply; wait for the answer first.
+Never say or write that the wearer said something they didn't. Only reflect back what is actually in their
+messages; if you didn't catch an answer, ask again briefly. Card quotes must be their exact words.
 If a message says the wearer double-tapped to move on, they have nothing to add: go to the next step.
 When you ask "anything else?", add "or double-tap if that's all"."""
 
@@ -180,6 +182,8 @@ class Session:
         self.context = None
         self.topic = None
         self.levels: dict[str, str] = {}
+        self.said: list[str] = []                         # the wearer's own (redacted) words, memory only:
+                                                          # card quotes must come from here
         self.shown: dict[str, bool] = {}
         self.dial_index = REST
         self.dial_on = False
@@ -328,6 +332,8 @@ class Session:
         ("not good") are skipped rather than guessed."""
         if self.bot_talking:                              # the band mic hearing Tend's own voice: ignore it
             return
+        if text.strip():
+            self.said.append(text.strip())
         if self.reply_pending and len(text.split()) >= 2 and self.interrupter:
             # They kept talking after a pause, before Tend spoke: that reply is already stale. Drop it; the
             # turn they're in now gets one reply that covers everything they said (no double answers).
@@ -363,6 +369,7 @@ class Session:
 
     async def flick(self, source: str):
         """Flick while the bot is talking = stop talking now. Otherwise = 'I'm done talking' (ends my turn)."""
+        self._last_flick_at = time.time()                 # the band also reports a flick's sharp stop as taps
         if self._avatar == "speaking" and self.interrupter:
             await self.interrupter.broadcast_interruption()   # cuts Gemini's reply, ElevenLabs and the speaker
             logger.info(f"{source}: stopping the bot mid-sentence")
@@ -376,6 +383,8 @@ class Session:
     async def double_tap(self):
         """Double-tap: confirm the dial if one is showing; otherwise 'nothing to add, move on'
         (answers an open question without speech)."""
+        if time.time() - getattr(self, "_last_flick_at", 0.0) < 1.5:
+            return                                        # that "double-tap" was the flick itself
         if self.dial_on:
             return await self.confirm_dial()
         if self.typing:
@@ -408,8 +417,8 @@ class Session:
         self.context.add_message({"role": "user", "content":
                                   f"(With a wrist tilt, the wearer chose to skip {topic}.)" if skipped else
                                   f"(With a wrist tilt, the wearer chose '{level}' for {topic}.)"})
-        if not skipped and level in guardrails.WATCH.get(topic, ()):
-            return await self._offer_more(topic, level)   # worth asking about: let them say or type more
+        if not skipped:
+            return await self._offer_more(topic, level)   # let them say or type more (rest = no thanks)
         await self.run_llm()
 
     # -------------------------------------------------------------- tell me more (say it / type it)
@@ -468,6 +477,7 @@ class Session:
             prov.log("hud->llm", "typed text (redacted)", "Gemini (Google)",
                      redactions=[x["type"] for x in spans])
             await self.hud.send({"type": "caption", "who": "you", "text": "⌨ " + clean}, sticky=False)
+            self.said.append(clean)                       # typed words count as theirs, even mid-reply
             await self.heard(clean)
             about = f" about {topic}" if topic in TOPICS else ""
             self.context.add_message({"role": "user", "content": f"(Typed by the wearer{about}:) {clean}"})
@@ -812,10 +822,30 @@ def summary_schema():
     return s
 
 
+_WORD = re.compile(r"[\w\[\]']+", re.UNICODE)
+
+
+def quote_was_said(quote: str, said: list[str]) -> bool:
+    """True if the quote is (nearly) the wearer's own words: at least 80% of its words appear, in order,
+    in what they said or typed. Small transcription differences ("its"/"it's") pass; invented lines don't."""
+    import difflib
+    q = [w.lower() for w in _WORD.findall(quote)]
+    if not q:
+        return True
+    heard = [w.lower() for w in _WORD.findall(" ".join(said))]
+    m = difflib.SequenceMatcher(None, q, heard, autojunk=False)
+    return sum(b.size for b in m.get_matching_blocks()) >= 0.8 * len(q)
+
+
 def make_submit(session: Session):
     async def submit_summary(params):
         summary = dict(params.arguments)
         ok, issues, escalate = guardrails.check_summary(summary)
+        for t in TOPICS:                                  # quotes must be the wearer's real words
+            q = str((summary.get(t) or {}).get("quote") or "").strip()
+            if q and not quote_was_said(q, session.said):
+                issues.append(f'{t}.quote "{q}" is not something the wearer said. Use their exact words from '
+                              f'this conversation, or leave quote empty. Never invent what they said.')
         for t in TOPICS:                                  # the camera line gets the same gate, plus no people
             shown = str((summary.get(t) or {}).get("shown", ""))
             if m := guardrails._DIAG_RE.search(shown):
@@ -823,7 +853,7 @@ def make_submit(session: Session):
             if m := PEOPLE_RE.search(shown):
                 issues.append(f'{t}.shown describes a person ("{m.group(0)}"): name objects only')
         ok = not issues
-        prov.log("llm->safety_gate", "summary json", "local safety gate", ok=ok, issues=issues)
+        prov.log("llm->safety_gate", "summary json", "local safety gate", ok=ok, issues=len(issues))
         if not ok:
             logger.warning(f"Safety gate BLOCKED: {len(issues)} issue(s), sent back to Gemini to fix")
             await params.result_callback({"status": "blocked", "fix": issues,

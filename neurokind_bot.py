@@ -226,7 +226,7 @@ def make_summary_tool():
 async def submit_summary(params):
     summary = dict(params.arguments)
     ok, issues, escalate = guardrails.check_summary(summary)
-    prov.log("llm->safety_gate", "summary json", "local safety gate", ok=ok, issues=issues)
+    prov.log("llm->safety_gate", "summary json", "local safety gate", ok=ok, issues=len(issues))
     if not ok:
         logger.warning(f"Safety gate BLOCKED: {issues}")
         await params.result_callback({"status": "blocked", "fix": issues,
