@@ -56,6 +56,10 @@ Sprout is driven live by the voice pipeline (Pipecat's turn and speech events), 
   the wearer's own words.
 - 🔔 **Little sounds from Sprout:** a soft chime when an answer is confirmed, a pop for skip, a shimmer for the
   streak, a whoosh when a flick stops Tend talking (`N` mutes).
+- 🙆 **Stretch reminders:** after the check-in, if the band feels your wrist barely moving for a while, Sprout
+  stretches and Tend suggests a quick stretch; Sprout cheers when you move. The card counts these as *measured by
+  the band*, kept apart from what the wearer said. (Demo: 15 s; a real setting would be closer to an hour, with a
+  phone app keeping the band connected all day.)
 - 🌱 **Streaks:** "Day 7 in a row". Tend thanks you once, at goodbye.
 
 **For the clinician**
@@ -193,7 +197,7 @@ Open **http://localhost:8765**, pick a language, and talk. The clinician dashboa
 synthetic history.
 
 **HUD keys** (for rehearsing without the band): `F` flick · `←` `→` dial · `Enter` confirm / nothing to add ·
-`P` show camera · `S` cycle Sprout · `M` mirror · `C` captions · `N` sounds on/off.
+`P` show camera · `S` cycle Sprout · `M` mirror · `C` captions · `N` sounds on/off · `T` stretch reminder.
 
 **Tests:** `python tests/test_voice_levels.py` · `python tests/test_streak.py`
 
