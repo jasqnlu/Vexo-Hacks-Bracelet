@@ -787,7 +787,7 @@ def make_submit(session: Session):
         ok = not issues
         prov.log("llm->safety_gate", "summary json", "local safety gate", ok=ok, issues=issues)
         if not ok:
-            logger.warning(f"Safety gate BLOCKED: {issues}")
+            logger.warning(f"Safety gate BLOCKED: {len(issues)} issue(s), sent back to Gemini to fix")
             await params.result_callback({"status": "blocked", "fix": issues,
                                           "rule": "Report only what the wearer said or showed. No conditions, "
                                                   "no interpretation, no people."})
@@ -833,6 +833,17 @@ def make_submit(session: Session):
 
 
 # ------------------------------------------------------------------ main
+# The run log file keeps only these messages (timing and events, never what anyone said). Anything else,
+# including every Pipecat line, stays on the terminal only.
+_LOG_FILE_OK = ("Tend reply #", "Language:", "Connected to", "Card saved", "--max-minutes", "HUD tab",
+                "wrist flick", "HUD key", "wearer still talking", "wrist/typed answer rides", "Stillness nudge",
+                "Stretch #", "Safety gate BLOCKED:", "Open http")
+
+
+def _safe_for_log_file(record) -> bool:
+    return record["message"].startswith(_LOG_FILE_OK)
+
+
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("number", nargs="?", type=int)
@@ -864,9 +875,11 @@ async def main():
     await hud.start()
     # Per-run log for debugging (gitignored, owner-only, kept 3 days). INFO only: Pipecat's DEBUG lines contain
     # transcripts and reply text, and check-in content never goes to disk outside the card.
-    (HERE / "logs").mkdir(mode=0o700, exist_ok=True)
-    logger.add(HERE / "logs" / f"hud_bot_{datetime.now():%Y%m%d_%H%M%S}.log", level="INFO", retention="3 days",
-               filter=lambda r: not any(k in r["message"] for k in ("Generating TTS", "Transcription", "transcript:")))
+    logs = HERE / "logs"
+    logs.mkdir(exist_ok=True)
+    os.chmod(logs, 0o700)                                 # also tightens a folder that already existed
+    logger.add(logs / f"hud_bot_{datetime.now():%Y%m%d_%H%M%S}.log", level="INFO", retention="3 days",
+               filter=_safe_for_log_file, opener=lambda p, fl: os.open(p, fl, 0o600))
     session = Session(hud, flip_dial=a.flip_dial, dwell=a.dwell)
     session.has_speaker = not a.no_speaker
     session.still.still_secs = a.still_secs
