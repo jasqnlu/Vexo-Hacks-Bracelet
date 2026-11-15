@@ -741,7 +741,7 @@ class BotCaptions(FrameProcessor):
 
     def __init__(self, session: Session):
         super().__init__()
-        self._s, self._buf = session, []
+        self._s, self._buf, self._n = session, [], 0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -757,7 +757,8 @@ class BotCaptions(FrameProcessor):
         if isinstance(frame, LLMFullResponseEndFrame) and self._buf:
             text, self._buf = "".join(self._buf).strip(), []
             if text:
-                logger.info(f"Tend reply: {text}")
+                self._n += 1                              # timing only: the words never go in the log file
+                logger.info(f"Tend reply #{self._n} ({len(text)} chars)")
                 await self._s.bot_said(text)
         await self.push_frame(frame, direction)
 
@@ -861,8 +862,11 @@ async def main():
 
     hud = HudServer(port=a.port)
     await hud.start()
-    (HERE / "logs").mkdir(exist_ok=True)                 # gitignored: one file per run, for debugging
-    logger.add(HERE / "logs" / f"hud_bot_{datetime.now():%H%M%S}.log", level="DEBUG")
+    # Per-run log for debugging (gitignored, owner-only, kept 3 days). INFO only: Pipecat's DEBUG lines contain
+    # transcripts and reply text, and check-in content never goes to disk outside the card.
+    (HERE / "logs").mkdir(mode=0o700, exist_ok=True)
+    logger.add(HERE / "logs" / f"hud_bot_{datetime.now():%Y%m%d_%H%M%S}.log", level="INFO", retention="3 days",
+               filter=lambda r: not any(k in r["message"] for k in ("Generating TTS", "Transcription", "transcript:")))
     session = Session(hud, flip_dial=a.flip_dial, dwell=a.dwell)
     session.has_speaker = not a.no_speaker
     session.still.still_secs = a.still_secs

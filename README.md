@@ -108,6 +108,7 @@ flowchart LR
 | **Custom wearable input for Pipecat** | `VexoBandInput` decodes the band's Opus packets into 16 kHz PCM frames, so the band is a first-class Pipecat transport. |
 | **Deepgram Flux, multilingual** | `--stt flux` runs `flux-general-multi` with language hints (the chosen language first), so mixed English/Spanish lands in one transcript. Flux's own end-of-turn detection drives the conversation through Pipecat's external turn strategies, and the wrist flick still overrides it. |
 | **Turn-taking for a noisy room** | Silero VAD + local Smart Turn, capped at 1.5 s of silence; a **wrist flick** ends the turn instantly. The mic is muted while Tend talks, so its own voice can't cut it off (we measured 3 self-interruptions/min before, 0 after). |
+| **One reply at a time** | Voice, wrist and typing all feed the same conversation, so Tend makes sure only one reply plays: the dial pauses while you talk (voice wins), a wrist answer waits until Tend finishes its sentence, a reply that went stale because you kept talking is dropped before it's spoken, and the band mic hearing Tend's own voice is ignored. |
 | **Self-correcting tool calls** | Gemini fills a strict card schema via `submit_summary`; if the safety gate finds diagnostic language ("shows signs of insomnia"), Gemini gets the exact fix list and resubmits. |
 | **Live HUD state** | A small processor turns Pipecat's speaking events into Sprout's states; voice answers and corrections ("change my appetite to normal") update the screen as they're said. |
 | **Two voices, one switch** | ElevenLabs Eleven v4 Turbo by default; `--tts deepgram` swaps in Deepgram Aura-2 (`helena` in English, `celeste` in Spanish) with no other change. |
@@ -123,6 +124,8 @@ flowchart LR
 - **Raw audio is never written to disk** by the bot. Camera frames are kept in memory only, one at a time.
 - **Non-diagnostic by construction:** a local safety gate checks every card (and every spoken recap) for
   diagnostic language before it is saved. Quotes of the wearer's own words are exempt.
+- **Debug logs hold timing, not words:** each run's log (`logs/`, owner-only, kept 3 days) records when Tend
+  replied and how long the reply was, never what was said.
 - **Provenance log:** every hop is recorded (what kind of data, from where, to where, when), never the content.
 - **Local web server hardening:** the HUD and dashboard bind to 127.0.0.1, refuse foreign Origins and Host
   headers (DNS rebinding), and serve only the dashboard's own data files.
