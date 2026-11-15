@@ -1,18 +1,42 @@
 # Tend 🌱
-### A daily wellbeing check-in you can **say, tilt, or show**: on a wrist band, in under two minutes.
+### Two minutes a day, out loud. A daily talk with a warm voice on your wrist, and a clear note for the people who care for you.
 
 *By NeuroKind · built at VexoHacks (Vexo × Y Combinator, Nov 14 2026)*
 
 ![Tend start screen with Sprout](docs/images/hud-start.png)
 
-Clinicians see their patients every few weeks. What happens in between (a run of bad nights, a stressful week,
-skipped meals) mostly goes unrecorded, or gets squeezed into a rushed "how have you been?" at the next visit.
-Wearables measure the body, not how someone *feels*, and questionnaires get skipped.
+## The pitch
 
-**Tend** fills that gap. The wearer double-taps their Vexo band and a warm voice asks how their day was, then
-about **sleep, mood, stress and appetite**, one at a time, with a natural follow-up when something happened.
-They can answer out loud, **tilt their wrist** to pick an answer without speaking, or **show** the camera their
-lunch. Tend turns that into a **structured, non-diagnostic card** a clinician can scan in seconds, with a
+**In one line:** Tend is a two-minute daily talk on your wrist. You tell it how your day went; your care team
+gets a calm, one-glance summary of what you actually said.
+
+**In 30 seconds:**
+> Most of life happens between appointments. A rough week, three bad nights, a few skipped meals: by the next
+> visit it's a blur, and "how have you been?" gets a shrug. Tend turns that into a two-minute talk, every day.
+> Double-tap your band and Tend asks how your day was, listens, and follows up the way a friend would. Then it
+> asks about sleep, mood, stress and appetite, one question at a time. Don't feel like talking? Tilt your wrist
+> or type instead. Your care team gets a short card in your own words (never a diagnosis) plus a few questions
+> worth asking at the next visit, and you can see exactly where your data went.
+
+**Why it matters:** forms get skipped and memories fade, but people will talk for two minutes if it feels like
+a conversation. Tend makes the daily talk easy to keep up (a streak, a friendly character, no screen needed) and
+makes the result easy to use (structured, non-diagnostic, ready for the health record).
+
+---
+
+## A daily talk, not a form
+
+Clinicians see their patients every few weeks. What happens in between mostly goes unrecorded, or gets squeezed
+into one rushed question at the next visit. Wearables measure the body, not how someone *feels*, and
+questionnaires are a chore.
+
+So Tend talks. Once a day the wearer double-taps their Vexo band and a warm voice asks **"How was your day?"**
+It follows up once when something happened ("what made it rough?"), then moves through **sleep, mood, stress
+and appetite**, one short question at a time, and ends with "anything else you'd like to add?". The wearer
+can answer out loud, **tilt their wrist** to pick an answer, **type** when they'd rather not speak, or **show**
+the camera their lunch. Two minutes later it's done, and Tend says goodbye (and thanks them for the streak).
+
+Behind the scenes Tend writes a **structured, non-diagnostic card** a clinician can scan in seconds, with a
 **record of where every piece of data went**.
 
 > Tend reports only what the wearer said. It never diagnoses, interprets, or gives medical advice, and a local
@@ -42,8 +66,9 @@ Sprout is driven live by the voice pipeline (Pipecat's turn and speech events), 
 ## What it does
 
 **For the wearer**
-- 🗣️ **Voice-first check-in:** "How was your day?" → one natural follow-up when something happened → sleep, mood,
-  stress, appetite → "anything else?" → "would you like a clinician to follow up?"
+- 🗣️ **A daily talk:** "How was your day?" → one natural follow-up when something happened → sleep, mood,
+  stress, appetite → "anything else?" → "would you like a clinician to follow up?" Tend asks **one question at a
+  time** and keeps its replies short, so it never feels like an interrogation.
 - 🤚 **No voice needed:** tilt the wrist to move a dial, **hold 2 s** to confirm (or double-tap), **tilt far left
   to skip**. Double-tap answers "nothing to add". Built for people who don't use speech, or not all the time.
 - ⌨️ **Tell me more, your way:** when a tilt answer is worth asking about (poor sleep, low mood…), the dial turns
@@ -56,7 +81,7 @@ Sprout is driven live by the voice pipeline (Pipecat's turn and speech events), 
   the wearer's own words.
 - 🔔 **Little sounds from Sprout:** a soft chime when an answer is confirmed, a pop for skip, a shimmer for the
   streak, a whoosh when a flick stops Tend talking (`N` mutes).
-- 🙆 **Stretch reminders:** after the check-in, if the band feels your wrist barely moving for a while, Sprout
+- 🙆 **Stretch reminders:** after the daily talk, if the band feels your wrist barely moving for a while, Sprout
   stretches and Tend suggests a quick stretch; Sprout cheers when you move. The card counts these as *measured by
   the band*, kept apart from what the wearer said. (Demo: 15 s; a real setting would be closer to an hour, with a
   phone app keeping the band connected all day.)
@@ -139,7 +164,7 @@ flowchart LR
 |---|---|
 | **Deepgram: Best Voice Use Case on Pipecat** | A full Pipecat pipeline with a **custom wearable input transport**. Deepgram end to end: streaming STT with built-in redaction and keyterms, **Flux multilingual** for Spanglish with Flux's own end-of-turn detection, and **Aura-2** as Tend's voice in English and Spanish. Turn-taking is tuned for a wrist mic in a loud room, with gesture-driven turn control (flick to end or interrupt). |
 | **Google DeepMind: Best Use of Gemini 4** | Gemini 4 Hydrogen runs the conversation and fills a strict schema through **tool calling with self-correction** against a safety gate; **multimodal** (one camera frame when the wearer shows their meal); speaks Spanish while writing the clinician's card in English; writes **visit questions** for the clinician that pass the same gate, rewriting itself when flagged. |
-| **ElevenLabs: Best ElevenLabs Project** | Tend's whole personality is its voice: **Eleven v4 Turbo** (~0.18 s to first audio) for the live check-in, the same voice reading the **weekly recap** on the clinician dashboard, and a **multilingual** check-in. |
+| **ElevenLabs: Best ElevenLabs Project** | Tend's whole personality is its voice: **Eleven v4 Turbo** (~0.18 s to first audio) for the daily talk, the same voice reading the **weekly recap** on the clinician dashboard, and a **multilingual** daily talk (English or Español). |
 
 ---
 
@@ -149,7 +174,8 @@ flowchart LR
 
 1. **Enroll:** a clinic enrolls a patient in Tend, sets which topics matter for them, and the patient consents
    to what is shared and with whom.
-2. **Check in:** once a day, the patient double-taps the band. Two minutes, by voice, by wrist, or both.
+2. **The daily talk:** once a day, usually in the evening, the patient double-taps the band and talks with Tend
+   for two minutes: by voice, by wrist, by typing, or a mix.
 3. **Triage:** the clinician's dashboard shows only what changed: "Reported poor sleep 4 nights in a row".
    Self-harm mentions are flagged to the care team immediately; the wearer hears 988 right away.
 4. **Before the visit:** the clinician plays the 30-second weekly recap or opens the 7-day timeline, so the
@@ -176,9 +202,9 @@ flowchart LR
   for self-reported check-ins.
 - **Why now:** low-latency voice AI (sub-second speech, ~2 s replies) finally makes a *conversation* on a wearable
   feel natural, and clinicians are short on time between visits.
-- **Edge:** a voice-first and no-voice (wrist) check-in on a device people already wear; output designed for
+- **Edge:** a daily talk that also works without a voice (wrist, typing) on a device people already wear; output designed for
   clinicians (structured, non-diagnostic, FHIR-ready); privacy and provenance as product features, not fine print.
-- **What we'd validate next:** check-in completion over 30 days; clinician time saved per visit; regulatory
+- **What we'd validate next:** how many people keep the daily talk going over 30 days; clinician time saved per visit; regulatory
   positioning (staying non-diagnostic); vendor agreements for health data (BAAs); accuracy of the wrist-only path.
 
 ---
